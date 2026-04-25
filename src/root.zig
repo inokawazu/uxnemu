@@ -275,7 +275,6 @@ const CPU = struct {
                     self.push(x, r, s); // y z x
                 },
                 .DUP => {
-                    // TODO: test DUP
                     const x = self.pop(k, r, s);
                     self.push(x, r, s);
                     self.push(x, r, s);
@@ -560,7 +559,28 @@ test "ROT" {
     cpu.eval();
 
     try std.testing.expectEqual(3, cpu.wp);
-    try std.testing.expectEqualSlices(u8, &[_]u8{2, 3, 1,}, cpu.ws[0..3]);
+    try std.testing.expectEqualSlices(u8, &[_]u8{2, 3, 1,}, cpu.ws[0..cpu.wp]);
+}
+
+test "DUP" {
+    const dup: Instruction = .{ .opcode = .DUP };
+    const dupk: Instruction = .{ .opcode = .DUP, .keep_mode = 1 };
+    const dup2: Instruction = .{ .opcode = .DUP, .short_mode = 1 };
+    const testints = [_]u8 {
+        LIT,
+        0x01,
+        dup.to_u8(),
+        dup2.to_u8(),
+        dupk.to_u8(),
+        BRK,
+    };
+    var cpu = CPU.init();
+    cpu.load_program(&testints);
+    cpu.eval();
+
+    try std.testing.expectEqual(6, cpu.wp);
+    const expected_ws = [_]u8{1} ** 6;
+    try std.testing.expectEqualSlices(u8, &expected_ws, cpu.ws[0..cpu.wp]);
 }
 
 test "test program INC five times, starting from 0x00" {
