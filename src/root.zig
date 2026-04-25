@@ -35,6 +35,16 @@ const Opcode = enum(u5) {
     SFT = 0x1f,
 };
 
+const LIT   = 0x80;
+const LIT2  = 0xa0;
+const LITr  = 0xc0;
+const LIT2r = 0xe0;
+const BRK= 0x00;
+
+const JCI = 0x20; 
+const JMI = 0x40; 
+const JSI = 0x60; 
+
 
 // Holds Instruction data
 // data lay out 'kr2ooooo'
@@ -77,6 +87,46 @@ fn rel_offset(pc: u16, offset: u16) u16 {
     return @intCast(rel + @as(i32, pc));
 }
 
+// fn make_cpu(dei: fn (u16, u1) u16, deo: fn (u16, u16, u1) void) type {
+//     return ;
+// }
+
+
+// fn console_dei(dev: u16, s: u1) u16 {
+//     const addr: u8 = @truncate(dev);
+// }
+
+// fn console_deo(dev: u16, x: u16, s: u1) u16 {
+// }
+
+
+// fn test_dei(dev: u16, s: u1) u16 {
+//     _ = s;
+//     _ = dev;
+//     return 0;
+// }
+
+// fn test_deo(dev: u16, x: u16, s: u1) void {
+//     _ = s;
+//     _ = dev;
+//     _ = x;
+// }
+
+// const Test_CPU = make_cpu(test_dei, test_deo);
+
+const EvalReturn = union(enum) {
+    brk,
+    deo: struct {
+        addr: u16,
+        value: u16,
+        short_mode: u1,
+    },
+    dei: struct {
+        addr: u16,
+        short_mode: u1,
+    },
+};
+
 const CPU = struct {
     rp: u8,
     rs: Stack,
@@ -87,7 +137,7 @@ const CPU = struct {
 
     const Self = @This();
 
-    fn init() Self {
+    pub fn init() Self {
         return .{
             .rp = 0,
             .rs =  std.mem.zeroes(Stack),
@@ -98,11 +148,18 @@ const CPU = struct {
         };
     }
 
-    fn load_program(self: *Self, program: []const u8) void {
+    pub fn load_program(self: *Self, program: []const u8) void {
         for (program, START_PC..) |program_memory, ram_i| {
             self.ram[ram_i] = program_memory;
         }
     }
+
+    pub fn load_rom(self: *Self, rom: []const u8) void {
+        for (rom, 0..) |program_memory, ram_i| {
+            self.ram[ram_i] = program_memory;
+        }
+    }
+    
     
     // pop working stack
     fn popw(self: *Self, k: u1, s: u1) u16 {
@@ -148,7 +205,7 @@ const CPU = struct {
         self.rp += 1;
     }
 
-    fn pop(self: *Self, k: u1, r: u1, s: u1) u16 {
+    pub fn pop(self: *Self, k: u1, r: u1, s: u1) u16 {
         if (r == 1) {
             return self.popr(k, s);
         } else {
@@ -156,7 +213,7 @@ const CPU = struct {
         }
     }
 
-    fn push(self: *Self, value: u16, r: u1, s: u1) void {
+    pub fn push(self: *Self, value: u16, r: u1, s: u1) void {
         if (r == 1) {
             self.pushr(value, s);
         } else {
@@ -164,19 +221,15 @@ const CPU = struct {
         }
     }
 
-    fn jump(self: *Self, addr: u16, s: u1) void {
+    pub fn jump(self: *Self, addr: u16, s: u1) void {
         if (s == 1) {
             self.pc = addr;
         } else {
             self.pc = rel_offset(self.pc, addr);
-            // const addr_u8: u8 = @truncate(addr);
-            // const rel: i8 = @bitCast(addr_u8);
-            // const new_pc: u16 = @intCast(rel + @as(i32, addr));
-            // self.pc = new_pc;
         }
     }
 
-    fn fetch(self: *Self, addr: u16, s: u1) u16 {
+    pub fn fetch(self: *Self, addr: u16, s: u1) u16 {
         if (s == 1) {
             return mword(self.ram[addr], self.ram[addr + 1]);
         } else {
@@ -184,7 +237,7 @@ const CPU = struct {
         }
     }
 
-    fn store(self: *Self, x: u16, addr: u16, s: u1) void {
+    pub fn store(self: *Self, x: u16, addr: u16, s: u1) void {
         if (s == 1) {
             self.ram[addr] = @truncate(x >> 8);
             self.ram[addr + 1] = @truncate(x);
@@ -193,19 +246,7 @@ const CPU = struct {
         }
     }
 
-    fn dei(dev: u16, s: u1) u16 {
-        _ = s;
-        _ = dev;
-        return 0;
-    }
-
-    fn deo(dev: u16, x: u16, s: u1) void {
-        _ = s;
-        _ = dev;
-        _ = x;
-    }
-
-    fn eval(self: *Self) void {
+    pub fn eval(self: *Self) void {
         while (true) {
             const next_inst = Instruction.from_u8(self.ram[self.pc]);
             self.pc += 1;
@@ -389,15 +430,17 @@ const CPU = struct {
                 },
                 .DEI => {
                     //TODO: test DEI and implement
-                    const dev = self.pop(k, r, 0);
-                    const x = CPU.dei(dev, s);
-                    self.push(x, r, s);
+                    // const dev = self.pop(k, r, 0);
+                    // const x = dei(dev, s);
+                    // self.push(x, r, s);
+                    return;
                 },
                 .DEO => {
                     //TODO: test DEO and implement
-                    const dev = self.pop(k, r, 0);
-                    const x = self.pop(k, r, s);
-                    CPU.deo(dev, x, s);
+                    // const dev = self.pop(k, r, 0);
+                    // const x = self.pop(k, r, s);
+                    // deo(dev, x, s);
+                    return;
                 },
                 .ADD => {
                     const y = self.pop(k, r, s);
@@ -447,35 +490,11 @@ const CPU = struct {
     }
 };
 
-fn lit(r: u1, s: u1) Instruction {
-    return .{
-        .opcode = .BRK,
-        .return_mode = r,
-        .short_mode= s,
-        .keep_mode = 1,
-    };
-}
-
-
-const LIT   = 0x80;
-const LIT2  = 0xa0;
-const LITr  = 0xc0;
-const LIT2r = 0xe0;
-const BRK= 0x00;
-
-const JCI = 0x20; 
-const JMI = 0x40; 
-const JSI = 0x60; 
-
-// 0x00 BRK    0x80 LIT
-// 0x20 JCI    0xa0 LIT2
-// 0x40 JMI    0xc0 LITr
-// 0x60 JSI    0xe0 LIT2r
 
 test "SWP" {
     const swp: Instruction = .{.opcode = .SWP};
     const swp2: Instruction = .{.opcode = .SWP, .short_mode = 1};
-    const testints = [_]u8 {
+    const test_program = [_]u8 {
         LIT2,
         0x12,
         0x34,
@@ -484,11 +503,11 @@ test "SWP" {
         0x78,
         swp.to_u8(),
         swp2.to_u8(),
-        0x00,
+        BRK,
     };
 
     var cpu = CPU.init();
-    cpu.load_program(&testints);
+    cpu.load_program(&test_program);
     cpu.eval();
     try std.testing.expectEqualSlices(u8, &[_]u8{0x78, 0x56, 0x12, 0x34}, cpu.ws[0..4]);
     try std.testing.expectEqual(4, cpu.wp);
@@ -496,7 +515,7 @@ test "SWP" {
 
 test "NIP" {
     const nip: Instruction = .{.opcode = .NIP};
-    const testints = [_]u8 {
+    const test_program = [_]u8 {
         LIT2,
         0x12,
         0x34,
@@ -505,7 +524,7 @@ test "NIP" {
     };
 
     var cpu = CPU.init();
-    cpu.load_program(&testints);
+    cpu.load_program(&test_program);
     cpu.eval();
 
     try std.testing.expectEqual(1, cpu.wp);
@@ -514,7 +533,7 @@ test "NIP" {
 
 test "test LIT2 and POP2" {
 
-    const testints = [_]u8 {
+    const test_program = [_]u8 {
         LIT2,
         0x12,
         0x34,
@@ -525,7 +544,7 @@ test "test LIT2 and POP2" {
     };
 
     var cpu = CPU.init();
-    cpu.load_program(&testints);
+    cpu.load_program(&test_program);
     cpu.eval();
 
     // try std.testing.expectEqual(5, cpu.peekw());
@@ -545,7 +564,7 @@ test "test LIT2 and POP2" {
 
 test "ROT" {
     const rot: Instruction = .{ .opcode = .ROT };
-    const testints = [_]u8 {
+    const test_program = [_]u8 {
         LIT2,
         0x01,
         0x02, // 1 2
@@ -555,7 +574,7 @@ test "ROT" {
         BRK,
     };
     var cpu = CPU.init();
-    cpu.load_program(&testints);
+    cpu.load_program(&test_program);
     cpu.eval();
 
     try std.testing.expectEqual(3, cpu.wp);
@@ -566,7 +585,7 @@ test "DUP" {
     const dup: Instruction = .{ .opcode = .DUP };
     const dupk: Instruction = .{ .opcode = .DUP, .keep_mode = 1 };
     const dup2: Instruction = .{ .opcode = .DUP, .short_mode = 1 };
-    const testints = [_]u8 {
+    const test_program = [_]u8 {
         LIT,
         0x01,
         dup.to_u8(),
@@ -575,7 +594,7 @@ test "DUP" {
         BRK,
     };
     var cpu = CPU.init();
-    cpu.load_program(&testints);
+    cpu.load_program(&test_program);
     cpu.eval();
 
     try std.testing.expectEqual(6, cpu.wp);
@@ -587,7 +606,7 @@ test "test program INC five times, starting from 0x00" {
     const _inc: Instruction = .{.opcode = .INC};
     const inc = _inc.to_u8();
     
-    const testints = [_]u8 {
+    const test_program = [_]u8 {
         LIT,
         0x00,
         inc, inc, inc, inc, inc,
@@ -595,7 +614,7 @@ test "test program INC five times, starting from 0x00" {
     };
 
     var cpu = CPU.init();
-    cpu.load_program(&testints);
+    cpu.load_program(&test_program);
     cpu.eval();
 
     try std.testing.expectEqual(5, cpu.peekw());
@@ -606,7 +625,7 @@ test "test program to find 1 + 2 = 3" {
     const add: Instruction = .{.opcode = .ADD};
     
     // 1 + 2
-    const testints = [_]u8 {
+    const test_program = [_]u8 {
         LIT,
         0x01,
         LIT,
@@ -616,7 +635,7 @@ test "test program to find 1 + 2 = 3" {
     };
 
     var cpu = CPU.init();
-    cpu.load_program(&testints);
+    cpu.load_program(&test_program);
     cpu.eval();
 
     try std.testing.expectEqual(3, cpu.peekw());
