@@ -246,7 +246,7 @@ const CPU = struct {
         }
     }
 
-    pub fn eval(self: *Self) void {
+    pub fn eval(self: *Self) EvalReturn {
         while (true) {
             const next_inst = Instruction.from_u8(self.ram[self.pc]);
             self.pc += 1;
@@ -267,7 +267,7 @@ const CPU = struct {
                             self.push(x, r, s);
                             self.pc += 2;
                         },
-                        BRK => { return; },
+                        BRK => { return .brk; },
                         JCI => {
                             const b= self.pop(k, r, s);
                             if (b != 0) {
@@ -430,17 +430,22 @@ const CPU = struct {
                 },
                 .DEI => {
                     //TODO: test DEI and implement
-                    // const dev = self.pop(k, r, 0);
+                    const dev = self.pop(k, r, 0);
                     // const x = dei(dev, s);
                     // self.push(x, r, s);
-                    return;
+                    // return .{ .addr = dev, .value = x, .short_mode = s };
+                    return .{ .dei =
+                        .{ .addr = dev, .short_mode = s } 
+                    } ;
                 },
                 .DEO => {
                     //TODO: test DEO and implement
-                    // const dev = self.pop(k, r, 0);
-                    // const x = self.pop(k, r, s);
+                    const dev = self.pop(k, r, 0);
+                    const x = self.pop(k, r, s);
                     // deo(dev, x, s);
-                    return;
+                    return .{ .deo = 
+                        .{.addr = dev, .value = x, .short_mode = s}
+                    };
                 },
                 .ADD => {
                     const y = self.pop(k, r, s);
@@ -508,7 +513,7 @@ test "SWP" {
 
     var cpu = CPU.init();
     cpu.load_program(&test_program);
-    cpu.eval();
+    _ = cpu.eval();
     try std.testing.expectEqualSlices(u8, &[_]u8{0x78, 0x56, 0x12, 0x34}, cpu.ws[0..4]);
     try std.testing.expectEqual(4, cpu.wp);
 }
@@ -525,7 +530,7 @@ test "NIP" {
 
     var cpu = CPU.init();
     cpu.load_program(&test_program);
-    cpu.eval();
+    _ = cpu.eval();
 
     try std.testing.expectEqual(1, cpu.wp);
     try std.testing.expectEqual(cpu.peekw(), 0x34);
@@ -545,7 +550,7 @@ test "test LIT2 and POP2" {
 
     var cpu = CPU.init();
     cpu.load_program(&test_program);
-    cpu.eval();
+    _ = cpu.eval();
 
     // try std.testing.expectEqual(5, cpu.peekw());
     try std.testing.expectEqual(4, cpu.wp);
@@ -575,7 +580,7 @@ test "ROT" {
     };
     var cpu = CPU.init();
     cpu.load_program(&test_program);
-    cpu.eval();
+    _ = cpu.eval();
 
     try std.testing.expectEqual(3, cpu.wp);
     try std.testing.expectEqualSlices(u8, &[_]u8{2, 3, 1,}, cpu.ws[0..cpu.wp]);
@@ -595,7 +600,7 @@ test "DUP" {
     };
     var cpu = CPU.init();
     cpu.load_program(&test_program);
-    cpu.eval();
+    _ = cpu.eval();
 
     try std.testing.expectEqual(6, cpu.wp);
     const expected_ws = [_]u8{1} ** 6;
@@ -615,7 +620,7 @@ test "test program INC five times, starting from 0x00" {
 
     var cpu = CPU.init();
     cpu.load_program(&test_program);
-    cpu.eval();
+    _ = cpu.eval();
 
     try std.testing.expectEqual(5, cpu.peekw());
     try std.testing.expectEqual(1, cpu.wp);
@@ -636,7 +641,7 @@ test "test program to find 1 + 2 = 3" {
 
     var cpu = CPU.init();
     cpu.load_program(&test_program);
-    cpu.eval();
+    _ = cpu.eval();
 
     try std.testing.expectEqual(3, cpu.peekw());
     try std.testing.expectEqual(1, cpu.wp);
