@@ -193,6 +193,18 @@ const CPU = struct {
         }
     }
 
+    fn dei(dev: u16, s: u1) u16 {
+        _ = s;
+        _ = dev;
+        return 0;
+    }
+
+    fn deo(dev: u16, x: u16, s: u1) void {
+        _ = s;
+        _ = dev;
+        _ = x;
+    }
+
     fn eval(self: *Self) void {
         while (true) {
             const next_inst = Instruction.from_u8(self.ram[self.pc]);
@@ -345,22 +357,27 @@ const CPU = struct {
                     const addr = rel_offset(self.pc, rel);
                     self.store(x, addr, s);
                 },
-                // .LDA => {
-                //     // TODO
-                //     unreachable;
-                // },
-                // .STA => {
-                //     // TODO
-                //     unreachable;
-                // },
-                // .DEI => {
-                //     // TODO
-                //     unreachable;
-                // },
-                // .DEO => {
-                //     // TODO
-                //     unreachable;
-                // },
+                .LDA => {
+                    //TODO: test LDA
+                    const addr = self.pop(k, r, 1);
+                    const x = self.fetch(addr, s);
+                    self.push(x, r, s);
+                },
+                .STA => {
+                    const addr = self.pop(k, r, 1);
+                    const x = self.pop(k, r, s);
+                    self.store(x, addr, s);
+                },
+                .DEI => {
+                    const dev = self.pop(k, r, 0);
+                    const x = CPU.dei(dev, s);
+                    self.push(x, r, s);
+                },
+                .DEO => {
+                    const dev = self.pop(k, r, 0);
+                    const x = self.pop(k, r, s);
+                    CPU.deo(dev, x, s);
+                },
                 .ADD => {
                     const y = self.pop(k, r, s);
                     const x = self.pop(k, r, s);
