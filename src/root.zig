@@ -266,7 +266,6 @@ const CPU = struct {
                     self.push(x, r, s);
                 },
                 .ROT => { 
-                    // TODO: test ROT
                     // x y z -> y z x
                     const z = self.pop(k, r, s);
                     const y = self.pop(k, r, s);
@@ -532,10 +531,9 @@ test "test LIT2 and POP2" {
 
     // try std.testing.expectEqual(5, cpu.peekw());
     try std.testing.expectEqual(4, cpu.wp);
-    const expected_ws = [4]u8{0x12, 0x34, 0x56, 0x78};
-    for (expected_ws, 0..) |elem, i| {
-        try std.testing.expectEqual(elem, cpu.ws[i]);
-    }
+
+    const expected_ws = &[4]u8{0x12, 0x34, 0x56, 0x78};
+    try std.testing.expectEqualSlices(u8, expected_ws, cpu.ws[0..4]);
 
     try std.testing.expectEqual(0x5678, cpu.popw(1, 1));
     try std.testing.expectEqual(0x5678, cpu.popw(0, 1));
@@ -545,15 +543,35 @@ test "test LIT2 and POP2" {
     try std.testing.expectEqual(0x1234, cpu.popw(0, 1));
 }
 
+
+test "ROT" {
+    const rot: Instruction = .{ .opcode = .ROT };
+    const testints = [_]u8 {
+        LIT2,
+        0x01,
+        0x02, // 1 2
+        LIT,
+        0x03, // 1 2 3
+        rot.to_u8(),
+        BRK,
+    };
+    var cpu = CPU.init();
+    cpu.load_program(&testints);
+    cpu.eval();
+
+    try std.testing.expectEqual(3, cpu.wp);
+    try std.testing.expectEqualSlices(u8, &[_]u8{2, 3, 1,}, cpu.ws[0..3]);
+}
+
 test "test program INC five times, starting from 0x00" {
     const _inc: Instruction = .{.opcode = .INC};
     const inc = _inc.to_u8();
     
     const testints = [_]u8 {
-        0x80, // LIT
-        0x00, // #00
+        LIT,
+        0x00,
         inc, inc, inc, inc, inc,
-        0x00, // BRK
+        BRK,
     };
 
     var cpu = CPU.init();
@@ -569,12 +587,12 @@ test "test program to find 1 + 2 = 3" {
     
     // 1 + 2
     const testints = [_]u8 {
-        0x80, // LIT //
-        0x01, // #01
-        0x80, // LIT
-        0x02, // #02
+        LIT,
+        0x01,
+        LIT,
+        0x02,
         add.to_u8(),
-        0x00, // BRK
+        BRK,
     };
 
     var cpu = CPU.init();
