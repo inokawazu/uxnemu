@@ -204,20 +204,20 @@ const CPU = struct {
                     self.push(y, r, s);
                 },
                 .SWP => {
-                    // TODO: test SWP
                     const y = self.pop(k, r, s);
                     const x = self.pop(k, r, s);
                     self.push(y, r, s);
                     self.push(x, r, s);
                 },
-                // .ROT => { 
-                //     const z = self.pop(k, r);
-                //     const y = self.pop(k, r);
-                //     const x = self.pop(k, r);
-                //     self.push(y, r);
-                //     self.push(z, r);
-                //     self.push(x, r);
-                // },
+                .ROT => { 
+                    // TODO: test ROT
+                    const z = self.pop(k, r, s);
+                    const y = self.pop(k, r, s);
+                    const x = self.pop(k, r, s);
+                    self.push(y, r, s);
+                    self.push(z, r, s);
+                    self.push(x, r, s);
+                },
                 // .DUP => {
                 //     const x = self.pop(k, r);
                 //     self.push(x, r);
