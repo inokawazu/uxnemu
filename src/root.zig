@@ -71,6 +71,12 @@ fn mword(bu: u8, bl: u8) u16 {
     return (@as(u16, bu) << 8) | @as(u16, bl);
 }
 
+fn rel_offset(pc: u16, offset: u16) u16 {
+    const offest_u8: u8 = @truncate(offset);
+    const rel: i8 = @bitCast(offest_u8);
+    return @intCast(rel + @as(i32, pc));
+}
+
 const CPU = struct {
     rp: u8,
     rs: Stack,
@@ -159,12 +165,31 @@ const CPU = struct {
     }
 
     fn jump(self: *Self, addr: u16, s: u1) void {
-        // const x = self.pop(k, r);
         if (s == 1) {
-            // TODO: implement
-            unreachable;
+            self.pc = addr;
         } else {
-            self.pc += @as(u16, addr);
+            self.pc = rel_offset(self.pc, addr);
+            // const addr_u8: u8 = @truncate(addr);
+            // const rel: i8 = @bitCast(addr_u8);
+            // const new_pc: u16 = @intCast(rel + @as(i32, addr));
+            // self.pc = new_pc;
+        }
+    }
+
+    fn fetch(self: *Self, addr: u16, s: u1) u16 {
+        if (s == 1) {
+            return mword(self.ram[addr], self.ram[addr + 1]);
+        } else {
+            return self.ram[addr];
+        }
+    }
+
+    fn store(self: *Self, x: u16, addr: u16, s: u1) void {
+        if (s == 1) {
+            self.ram[addr] = @truncate(x >> 8);
+            self.ram[addr + 1] = @truncate(x);
+        } else {
+            self.ram[addr] = @truncate(x);
         }
     }
 
@@ -224,92 +249,102 @@ const CPU = struct {
                     self.push(x, r, s);
                     self.push(x, r, s);
                 },
-                // .OVR => {
-                //     const y = self.pop(k,r);
-                //     const x = self.pop(k,r);
-                //     self.push(x,r);
-                //     self.push(y,r);
-                //     self.push(x,r);
-                // },
-                // .EQU => {
-                //     const y = self.pop(k, r);
-                //     const x = self.pop(k, r);
-                //     if (x == y) {
-                //         self.push(1, r);
-                //     } else {
-                //         self.push(0, r);
-                //     }
-                // },
-                // .NEQ => {
-                //     const y = self.pop(k, r);
-                //     const x = self.pop(k, r);
-                //     if (x != y) {
-                //         self.push(1, r);
-                //     } else {
-                //         self.push(0, r);
-                //     }
-                // },
-                // .GTH => {
-                //     const y = self.pop(k, r);
-                //     const x = self.pop(k, r);
-                //     if (x > y) {
-                //         self.push(1, r);
-                //     } else {
-                //         self.push(0, r);
-                //     }
-                // },
-                // .LTH => {
-                //     const y = self.pop(k, r);
-                //     const x = self.pop(k, r);
-                //     if (x < y) {
-                //         self.push(1, r);
-                //     } else {
-                //         self.push(0, r);
-                //     }
-                // },
-                // .JMP => {
-                //     const x = self.pop(k, r);
-                //     self.jump(x, s);
-                // },
-                // .JCN => {
-                //     const x = self.pop(k, r);
-                //     const b = self.pop(k, r);
-                //     if ( b == 1 ) self.jump(x, s);
-                // },
-                // .JSR => {
-                //     const x = self.pop(k, r);
-                //     // 0xpc1_pc2
-                //     const pc1: u8 = @intCast((self.pc >> 8) & 0xFF);
-                //     const pc2: u8 = @intCast((self.pc >> 0) & 0xFF);
-                //     self.push(pc1, r ^ 1);
-                //     self.push(pc2, r ^ 1);
-                //     self.jump(x, s);
-                // },
-                // .STH => {
-                //     const x = self.pop(k, r);
-                //     self.push(x, r ^ 1);
-                // },
-                // .LDZ => {
-                //     const zp = self.pop(k, r);
-                //     self.push(self.ram[zp], r);
-                // },
-                // .STZ => {
-                //     const zp = self.pop(k, r);
-                //     const x = self.pop(k, r);
-                //     self.ram[zp] = x;
-                // },
-                // .LDR => {
-                //     const rel: i8 = @bitCast(self.pop(k, r));
-                //     const addr: u16 = @intCast((@as(i32, self.pc) + @as(i8, rel)) & 0xFFFF);
-                //     const x = self.ram[addr];
-                //     self.push(x, r);
-                // },
-                // .STR => {
-                //     const rel: i8 = @bitCast(self.pop(k, r));
-                //     const x = self.pop(k, r);
-                //     const addr: u16 = @intCast((@as(i32, self.pc) + @as(i8, rel)) & 0xFFFF);
-                //     self.ram[addr] = x;
-                // },
+                .OVR => {
+                    // TODO: test OVR
+                    const y = self.pop(k,r, s);
+                    const x = self.pop(k,r, s);
+                    self.push(x, r, s);
+                    self.push(y, r, s);
+                    self.push(x, r, s);
+                },
+                .EQU => {
+                    // TODO: test EQU
+                    const y = self.pop(k, r, s);
+                    const x = self.pop(k, r, s);
+                    if (x == y) {
+                        self.push(1, r, s);
+                    } else {
+                        self.push(0, r, s);
+                    }
+                },
+                .NEQ => {
+                    // TODO: test NEQ
+                    const y = self.pop(k, r, s);
+                    const x = self.pop(k, r, s);
+                    if (x != y) {
+                        self.push(1, r, s);
+                    } else {
+                        self.push(0, r, s);
+                    }
+                },
+                .GTH => {
+                    // TODO: test GTH
+                    const y = self.pop(k, r, s);
+                    const x = self.pop(k, r, s);
+                    if (x > y) {
+                        self.push(1, r, s);
+                    } else {
+                        self.push(0, r, s);
+                    }
+                },
+                .LTH => {
+                    // TODO: test LTH
+                    const y = self.pop(k, r, s);
+                    const x = self.pop(k, r, s);
+                    if (x < y) {
+                        self.push(1, r, s);
+                    } else {
+                        self.push(0, r, s);
+                    }
+                },
+                .JMP => {
+                    //TODO: test JMP
+                    const x = self.pop(k, r, s);
+                    self.jump(x, s);
+                },
+                .JCN => {
+                    //TODO: test JCN
+                    const x = self.pop(k, r, s);
+                    const b = self.pop(k, r, 0);
+                    if ( b == 1 ) self.jump(x, s);
+                },
+                .JSR => {
+                    //TODO: test JSR
+                    const x = self.pop(k, r, s);
+                    self.push(self.pc, r ^ 1, 1);
+                    self.jump(x, s);
+                },
+                .STH => {
+                    //TODO: test STH
+                    const x = self.pop(k, r, s);
+                    self.push(x, r ^ 1, s);
+                },
+                .LDZ => {
+                    //TODO: test LDZ
+                    const zp = self.pop(k, r, 0);
+                    const x = self.fetch(zp, s);
+                    self.push(x, r, s);
+                },
+                .STZ => {
+                    //TODO: test STZ
+                    const zp = self.pop(k, r, 0);
+                    const x = self.pop(k, r, s);
+                    self.store(x, zp, s);
+                },
+                .LDR => {
+                    //TODO: test LDR
+                    const rel = self.pop(k, r, 0);
+                    const addr = rel_offset(self.pc, rel);
+                    const x = self.fetch(addr, s);
+                    self.push(x, r, s);
+                },
+                .STR => {
+                    //TODO: test STR
+                    const rel = self.pop(k, r, 0);
+                    const x = self.pop(k, r, s);
+                    const addr = rel_offset(self.pc, rel);
+                    self.store(x, addr, s);
+                },
                 // .LDA => {
                 //     // TODO
                 //     unreachable;
