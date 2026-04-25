@@ -208,7 +208,7 @@ const CPU = struct {
     fn eval(self: *Self) void {
         while (true) {
             const next_inst = Instruction.from_u8(self.ram[self.pc]);
-            self.pc += 1;
+            defer self.pc += 1;
 
             const k = next_inst.keep_mode;
             const r = next_inst.return_mode;
@@ -218,15 +218,15 @@ const CPU = struct {
                 .BRK => {switch (next_inst.to_u8()) {
                     // LIT
                     LIT, LITr => {
-                        self.push(self.ram[self.pc], r, s);
+                        self.push(self.ram[self.pc + 1], r, s);
                         self.pc += 1;
                     },
                     LIT2, LIT2r => {
-                        const x = mword(self.ram[self.pc], self.ram[self.pc + 1]);
+                        const x = mword(self.ram[self.pc + 1], self.ram[self.pc + 2]);
                         self.push(x, r, s);
                         self.pc += 2;
                     },
-                    BRK => { return; }, // BRK
+                    BRK => { return; },
                     else => { unreachable; },
                     }},
                 .INC => {
@@ -323,7 +323,7 @@ const CPU = struct {
                 .JSR => {
                     //TODO: test JSR
                     const x = self.pop(k, r, s);
-                    self.push(self.pc, r ^ 1, 1);
+                    self.push(self.pc + 1, r ^ 1, 1);
                     self.jump(x, s);
                 },
                 .STH => {
@@ -364,16 +364,19 @@ const CPU = struct {
                     self.push(x, r, s);
                 },
                 .STA => {
+                    //TODO: test STA
                     const addr = self.pop(k, r, 1);
                     const x = self.pop(k, r, s);
                     self.store(x, addr, s);
                 },
                 .DEI => {
+                    //TODO: test DEI and implement
                     const dev = self.pop(k, r, 0);
                     const x = CPU.dei(dev, s);
                     self.push(x, r, s);
                 },
                 .DEO => {
+                    //TODO: test DEO and implement
                     const dev = self.pop(k, r, 0);
                     const x = self.pop(k, r, s);
                     CPU.deo(dev, x, s);
@@ -383,7 +386,44 @@ const CPU = struct {
                     const x = self.pop(k, r, s);
                     self.push(x + y, r, s);
                 },
-                else => { unreachable; },
+                .SUB => {
+                    const y = self.pop(k, r, s);
+                    const x = self.pop(k, r, s);
+                    self.push(x - y, r, s);
+                },
+                .MUL => {
+                    const y = self.pop(k, r, s);
+                    const x = self.pop(k, r, s);
+                    self.push(x * y, r, s);
+                },
+                .DIV => {
+                    const y = self.pop(k, r, s);
+                    const x = self.pop(k, r, s);
+                    self.push(if (y==0) 0 else x/y, r, s);
+                },
+                .AND => {
+                    const y = self.pop(k, r, s);
+                    const x = self.pop(k, r, s);
+                    self.push(x & y, r, s);
+                },
+                .ORA => {
+                    const y = self.pop(k, r, s);
+                    const x = self.pop(k, r, s);
+                    self.push(x | y, r, s);
+                },
+                .EOR => {
+                    const y = self.pop(k, r, s);
+                    const x = self.pop(k, r, s);
+                    self.push(x ^ y, r, s);
+                },
+                .SFT => {
+                    // TODO: test SFT
+                    const rl: u8 = @truncate(self.pop(k, r, 0));
+                    const rn: u4 = @truncate(rl >> 4);
+                    const ln: u4 = @truncate(rl);
+                    const x = self.pop(k, r, s);
+                    self.push((x >> ln) << rn, r, s);
+                },
             }
         }
     }
