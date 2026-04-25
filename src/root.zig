@@ -218,11 +218,12 @@ const CPU = struct {
                     self.push(z, r, s);
                     self.push(x, r, s);
                 },
-                // .DUP => {
-                //     const x = self.pop(k, r);
-                //     self.push(x, r);
-                //     self.push(x, r);
-                // },
+                .DUP => {
+                    // TODO: test DUP
+                    const x = self.pop(k, r, s);
+                    self.push(x, r, s);
+                    self.push(x, r, s);
+                },
                 // .OVR => {
                 //     const y = self.pop(k,r);
                 //     const x = self.pop(k,r);
