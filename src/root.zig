@@ -35,6 +35,7 @@ const Opcode = enum(u5) {
     SFT = 0x1f,
 };
 
+
 // Holds Instruction data
 // data lay out 'kr2ooooo'
 // k = k mode
@@ -64,12 +65,11 @@ const RAM = [0xFFFF + 1]u8;
 
 // #abcd is equivalent to #ab #cd
 
-const Value = union {
-    byte: u8,
-    word: u16,
-};
-
 const START_PC = 0x100;
+
+fn mword(bu: u8, bl: u8) u16 {
+    return (@as(u16, bu) << 8) | @as(u16, bl);
+}
 
 const CPU = struct {
     rp: u8,
@@ -99,16 +99,22 @@ const CPU = struct {
     }
     
     // pop working stack
-    fn popw(self: *Self, keep_mode: u1) u8 {
-        // get top value
-        const out = self.ws[self.wp - 1];
-        if (keep_mode != 1) self.wp -= 1;
+    fn popw(self: *Self, k: u1, s: u1) u16 {
+        var out: u16 = self.ws[self.wp - 1];
+        if (s == 1) {
+            out |= @as(u16, self.ws[self.wp - 2]) << 8;
+        }
+        if (k != 1) self.wp -= 1 + @as(u8, s);
         return out;
     }
     
     // push working stack
-    fn pushw(self: *Self, value: u8) void {
-        self.ws[self.wp] = value;
+    fn pushw(self: *Self, value: u16, s: u1) void {
+        if (s==1) {
+            self.ws[self.wp] = @truncate((value >> 8) & 0xFF);
+            self.wp += 1;
+        }
+        self.ws[self.wp] = @truncate(value & 0xFF);
         self.wp += 1;
     }
 
@@ -117,36 +123,42 @@ const CPU = struct {
     }
 
     // pop return stack
-    fn popr(self: *Self, keep_mode: u1) u8 {
-        // get top value
-        const out = self.rs[self.rp - 1];
-        if (keep_mode != 1) self.rp -= 1;
+    fn popr(self: *Self, k: u1, s: u1) u16 {
+        var out: u16 = self.rs[self.rp - 1];
+        if (s == 1) {
+            out |= @as(u16, self.rs[self.rp - 2]) << 8;
+        }
+        if (k != 1) self.rp -= 1 + @as(u8, s);
         return out;
     }
 
     // push return stack
-    fn pushr(self: *Self, value: u8) void {
-        self.rs[self.rp] = value;
+    fn pushr(self: *Self, value: u16, s: u1) void {
+        if (s==1) {
+            self.rs[self.rp] = @truncate((value >> 8) & 0xFF);
+            self.rp += 1;
+        }
+        self.rs[self.rp] = @truncate(value & 0xFF);
         self.rp += 1;
     }
 
-    fn pop(self: *Self, keep_mode: u1, return_mode: u1) u8 {
-        if (return_mode == 1) {
-            return self.popr(keep_mode);
+    fn pop(self: *Self, k: u1, r: u1, s: u1) u16 {
+        if (r == 1) {
+            return self.popr(k, s);
         } else {
-            return self.popw(keep_mode);
+            return self.popw(k, s);
         }
     }
 
-    fn push(self: *Self, value: u8, return_mode: u1) void {
-        if (return_mode == 1) {
-            self.pushr(value);
+    fn push(self: *Self, value: u16, r: u1, s: u1) void {
+        if (r == 1) {
+            self.pushr(value, s);
         } else {
-            self.pushw(value);
+            self.pushw(value, s);
         }
     }
 
-    fn jump(self: *Self, addr: u8, s: u1) void {
+    fn jump(self: *Self, addr: u16, s: u1) void {
         // const x = self.pop(k, r);
         if (s == 1) {
             // TODO: implement
@@ -168,154 +180,155 @@ const CPU = struct {
             switch (next_inst.opcode) {
                 .BRK => {switch (next_inst.to_u8()) {
                     // LIT
-                    0x80 => {
-                        self.pushw(self.ram[self.pc]);
+                    LIT, LITr => {
+                        self.push(self.ram[self.pc], r, s);
                         self.pc += 1;
                     },
-                    0x00 => { return; }, // BRK
+                    LIT2, LIT2r => {
+                        const x = mword(self.ram[self.pc], self.ram[self.pc + 1]);
+                        self.push(x, r, s);
+                        self.pc += 2;
+                    },
+                    BRK => { return; }, // BRK
                     else => { unreachable; },
                     }},
                 .INC => {
-                    if (r == 1) {
-                        self.pushr(self.popr(k) + 1);
-                    }
-                    else {
-                        self.pushw(self.popw(k) + 1);
-                    }
+                    self.push(self.pop(k, r, s) + 1, r, s);
                 },
                 .POP => {
-                    if (r == 1) {_ = self.popr(k);} else {_ = self.popw(k);}
+                    _ = self.pop(k, r, s);
                 },
                 .NIP => {
-                    const y = self.pop(k, r);
-                    _ = self.pop(k, r);
-                    self.push(y, r);
+                    const y = self.pop(k, r, s);
+                    _ = self.pop(k, r, s);
+                    self.push(y, r, s);
                 },
                 .SWP => {
-                    const y = self.pop(k, r);
-                    const x = self.pop(k, r);
-                    self.push(y, r);
-                    self.push(x, r);
+                    // TODO: test SWP
+                    const y = self.pop(k, r, s);
+                    const x = self.pop(k, r, s);
+                    self.push(y, r, s);
+                    self.push(x, r, s);
                 },
-                .ROT => { 
-                    const z = self.pop(k, r);
-                    const y = self.pop(k, r);
-                    const x = self.pop(k, r);
-                    self.push(y, r);
-                    self.push(z, r);
-                    self.push(x, r);
-                },
-                .DUP => {
-                    const x = self.pop(k, r);
-                    self.push(x, r);
-                    self.push(x, r);
-                },
-                .OVR => {
-                    const y = self.pop(k,r);
-                    const x = self.pop(k,r);
-                    self.push(x,r);
-                    self.push(y,r);
-                    self.push(x,r);
-                },
-                .EQU => {
-                    const y = self.pop(k, r);
-                    const x = self.pop(k, r);
-                    if (x == y) {
-                        self.push(1, r);
-                    } else {
-                        self.push(0, r);
-                    }
-                },
-                .NEQ => {
-                    const y = self.pop(k, r);
-                    const x = self.pop(k, r);
-                    if (x != y) {
-                        self.push(1, r);
-                    } else {
-                        self.push(0, r);
-                    }
-                },
-                .GTH => {
-                    const y = self.pop(k, r);
-                    const x = self.pop(k, r);
-                    if (x > y) {
-                        self.push(1, r);
-                    } else {
-                        self.push(0, r);
-                    }
-                },
-                .LTH => {
-                    const y = self.pop(k, r);
-                    const x = self.pop(k, r);
-                    if (x < y) {
-                        self.push(1, r);
-                    } else {
-                        self.push(0, r);
-                    }
-                },
-                .JMP => {
-                    const x = self.pop(k, r);
-                    self.jump(x, s);
-                },
-                .JCN => {
-                    const x = self.pop(k, r);
-                    const b = self.pop(k, r);
-                    if ( b == 1 ) self.jump(x, s);
-                },
-                .JSR => {
-                    const x = self.pop(k, r);
-                    // 0xpc1_pc2
-                    const pc1: u8 = @intCast((self.pc >> 8) & 0xFF);
-                    const pc2: u8 = @intCast((self.pc >> 0) & 0xFF);
-                    self.push(pc1, r ^ 1);
-                    self.push(pc2, r ^ 1);
-                    self.jump(x, s);
-                },
-                .STH => {
-                    const x = self.pop(k, r);
-                    self.push(x, r ^ 1);
-                },
-                .LDZ => {
-                    const zp = self.pop(k, r);
-                    self.push(self.ram[zp], r);
-                },
-                .STZ => {
-                    const zp = self.pop(k, r);
-                    const x = self.pop(k, r);
-                    self.ram[zp] = x;
-                },
-                .LDR => {
-                    const rel: i8 = @bitCast(self.pop(k, r));
-                    const addr: u16 = @intCast((@as(i32, self.pc) + @as(i8, rel)) & 0xFFFF);
-                    const x = self.ram[addr];
-                    self.push(x, r);
-                },
-                .STR => {
-                    const rel: i8 = @bitCast(self.pop(k, r));
-                    const x = self.pop(k, r);
-                    const addr: u16 = @intCast((@as(i32, self.pc) + @as(i8, rel)) & 0xFFFF);
-                    self.ram[addr] = x;
-                },
-                .LDA => {
-                    // TODO
-                    unreachable;
-                },
-                .STA => {
-                    // TODO
-                    unreachable;
-                },
-                .DEI => {
-                    // TODO
-                    unreachable;
-                },
-                .DEO => {
-                    // TODO
-                    unreachable;
-                },
+                // .ROT => { 
+                //     const z = self.pop(k, r);
+                //     const y = self.pop(k, r);
+                //     const x = self.pop(k, r);
+                //     self.push(y, r);
+                //     self.push(z, r);
+                //     self.push(x, r);
+                // },
+                // .DUP => {
+                //     const x = self.pop(k, r);
+                //     self.push(x, r);
+                //     self.push(x, r);
+                // },
+                // .OVR => {
+                //     const y = self.pop(k,r);
+                //     const x = self.pop(k,r);
+                //     self.push(x,r);
+                //     self.push(y,r);
+                //     self.push(x,r);
+                // },
+                // .EQU => {
+                //     const y = self.pop(k, r);
+                //     const x = self.pop(k, r);
+                //     if (x == y) {
+                //         self.push(1, r);
+                //     } else {
+                //         self.push(0, r);
+                //     }
+                // },
+                // .NEQ => {
+                //     const y = self.pop(k, r);
+                //     const x = self.pop(k, r);
+                //     if (x != y) {
+                //         self.push(1, r);
+                //     } else {
+                //         self.push(0, r);
+                //     }
+                // },
+                // .GTH => {
+                //     const y = self.pop(k, r);
+                //     const x = self.pop(k, r);
+                //     if (x > y) {
+                //         self.push(1, r);
+                //     } else {
+                //         self.push(0, r);
+                //     }
+                // },
+                // .LTH => {
+                //     const y = self.pop(k, r);
+                //     const x = self.pop(k, r);
+                //     if (x < y) {
+                //         self.push(1, r);
+                //     } else {
+                //         self.push(0, r);
+                //     }
+                // },
+                // .JMP => {
+                //     const x = self.pop(k, r);
+                //     self.jump(x, s);
+                // },
+                // .JCN => {
+                //     const x = self.pop(k, r);
+                //     const b = self.pop(k, r);
+                //     if ( b == 1 ) self.jump(x, s);
+                // },
+                // .JSR => {
+                //     const x = self.pop(k, r);
+                //     // 0xpc1_pc2
+                //     const pc1: u8 = @intCast((self.pc >> 8) & 0xFF);
+                //     const pc2: u8 = @intCast((self.pc >> 0) & 0xFF);
+                //     self.push(pc1, r ^ 1);
+                //     self.push(pc2, r ^ 1);
+                //     self.jump(x, s);
+                // },
+                // .STH => {
+                //     const x = self.pop(k, r);
+                //     self.push(x, r ^ 1);
+                // },
+                // .LDZ => {
+                //     const zp = self.pop(k, r);
+                //     self.push(self.ram[zp], r);
+                // },
+                // .STZ => {
+                //     const zp = self.pop(k, r);
+                //     const x = self.pop(k, r);
+                //     self.ram[zp] = x;
+                // },
+                // .LDR => {
+                //     const rel: i8 = @bitCast(self.pop(k, r));
+                //     const addr: u16 = @intCast((@as(i32, self.pc) + @as(i8, rel)) & 0xFFFF);
+                //     const x = self.ram[addr];
+                //     self.push(x, r);
+                // },
+                // .STR => {
+                //     const rel: i8 = @bitCast(self.pop(k, r));
+                //     const x = self.pop(k, r);
+                //     const addr: u16 = @intCast((@as(i32, self.pc) + @as(i8, rel)) & 0xFFFF);
+                //     self.ram[addr] = x;
+                // },
+                // .LDA => {
+                //     // TODO
+                //     unreachable;
+                // },
+                // .STA => {
+                //     // TODO
+                //     unreachable;
+                // },
+                // .DEI => {
+                //     // TODO
+                //     unreachable;
+                // },
+                // .DEO => {
+                //     // TODO
+                //     unreachable;
+                // },
                 .ADD => {
-                    const y = self.pop(k, r);
-                    const x = self.pop(k, r);
-                    self.push(x + y, r);
+                    const y = self.pop(k, r, s);
+                    const x = self.pop(k, r, s);
+                    self.push(x + y, r, s);
                 },
                 else => { unreachable; },
             }
@@ -332,17 +345,93 @@ fn lit(r: u1, s: u1) Instruction {
     };
 }
 
+
+const LIT   = 0x80;
+const LIT2  = 0xa0;
+const LITr  = 0xc0;
+const LIT2r = 0xe0;
+const BRK= 0x00;
+
 // 0x00 BRK    0x80 LIT
 // 0x20 JCI    0xa0 LIT2
 // 0x40 JMI    0xc0 LITr
 // 0x60 JSI    0xe0 LIT2r
 
+test "SWP" {
+    const swp: Instruction = .{.opcode = .SWP};
+    const swp2: Instruction = .{.opcode = .SWP, .short_mode = 1};
+    const testints = [_]u8 {
+        LIT2,
+        0x12,
+        0x34,
+        LIT2,
+        0x56,
+        0x78,
+        swp.to_u8(),
+        swp2.to_u8(),
+        0x00,
+    };
+
+    var cpu = CPU.init();
+    cpu.load_program(&testints);
+    cpu.eval();
+    try std.testing.expectEqualSlices(u8, &[_]u8{0x78, 0x56, 0x12, 0x34}, cpu.ws[0..4]);
+    try std.testing.expectEqual(4, cpu.wp);
+}
+
+test "NIP" {
+    const nip: Instruction = .{.opcode = .NIP};
+    const testints = [_]u8 {
+        LIT2,
+        0x12,
+        0x34,
+        nip.to_u8(),
+        0x00,
+    };
+
+    var cpu = CPU.init();
+    cpu.load_program(&testints);
+    cpu.eval();
+
+    try std.testing.expectEqual(1, cpu.wp);
+    try std.testing.expectEqual(cpu.peekw(), 0x34);
+}
+
+test "test LIT2 and POP2" {
+
+    const testints = [_]u8 {
+        LIT2,
+        0x12,
+        0x34,
+        LIT2,
+        0x56,
+        0x78,
+        0x00,
+    };
+
+    var cpu = CPU.init();
+    cpu.load_program(&testints);
+    cpu.eval();
+
+    // try std.testing.expectEqual(5, cpu.peekw());
+    try std.testing.expectEqual(4, cpu.wp);
+    const expected_ws = [4]u8{0x12, 0x34, 0x56, 0x78};
+    for (expected_ws, 0..) |elem, i| {
+        try std.testing.expectEqual(elem, cpu.ws[i]);
+    }
+
+    try std.testing.expectEqual(0x5678, cpu.popw(1, 1));
+    try std.testing.expectEqual(0x5678, cpu.popw(0, 1));
+
+    try std.testing.expectEqual(0x34, cpu.popw(1, 0));
+    try std.testing.expectEqual(0x1234, cpu.popw(1, 1));
+    try std.testing.expectEqual(0x1234, cpu.popw(0, 1));
+}
 
 test "test program INC five times, starting from 0x00" {
     const _inc: Instruction = .{.opcode = .INC};
     const inc = _inc.to_u8();
     
-    // 1 + 2
     const testints = [_]u8 {
         0x80, // LIT
         0x00, // #00
