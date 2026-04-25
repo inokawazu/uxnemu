@@ -208,27 +208,46 @@ const CPU = struct {
     fn eval(self: *Self) void {
         while (true) {
             const next_inst = Instruction.from_u8(self.ram[self.pc]);
-            defer self.pc += 1;
+            self.pc += 1;
 
             const k = next_inst.keep_mode;
             const r = next_inst.return_mode;
             const s = next_inst.short_mode;
 
             switch (next_inst.opcode) {
-                .BRK => {switch (next_inst.to_u8()) {
-                    // LIT
-                    LIT, LITr => {
-                        self.push(self.ram[self.pc + 1], r, s);
-                        self.pc += 1;
-                    },
-                    LIT2, LIT2r => {
-                        const x = mword(self.ram[self.pc + 1], self.ram[self.pc + 2]);
-                        self.push(x, r, s);
-                        self.pc += 2;
-                    },
-                    BRK => { return; },
-                    else => { unreachable; },
-                    }},
+                .BRK => {
+                    switch (next_inst.to_u8()) {
+                        LIT, LITr => {
+                            self.push(self.ram[self.pc], r, s);
+                            self.pc += 1;
+                        },
+                        LIT2, LIT2r => {
+                            const x = mword(self.ram[self.pc], self.ram[self.pc + 1]);
+                            self.push(x, r, s);
+                            self.pc += 2;
+                        },
+                        BRK => { return; },
+                        JCI => {
+                            const b= self.pop(k, r, s);
+                            if (b != 0) {
+                                const x = mword(self.ram[self.pc], self.ram[self.pc + 1]);
+                                self.pc = @addWithOverflow(self.pc, x)[0];
+                            } else {
+                                self.pc += 2;
+                            }
+                        },
+                        JMI => {
+                            const x = mword(self.ram[self.pc], self.ram[self.pc + 1]);
+                            self.pc = @addWithOverflow(self.pc, x)[0];
+                        },
+                        JSI => {
+                            self.push(self.pc + 2, 1, 1);
+                            const x = mword(self.ram[self.pc], self.ram[self.pc + 1]);
+                            self.pc = @addWithOverflow(self.pc, x)[0];
+                        },
+                        else => { unreachable; },
+                    }
+                },
                 .INC => {
                     self.push(self.pop(k, r, s) + 1, r, s);
                 },
@@ -248,12 +267,13 @@ const CPU = struct {
                 },
                 .ROT => { 
                     // TODO: test ROT
+                    // x y z -> y z x
                     const z = self.pop(k, r, s);
                     const y = self.pop(k, r, s);
                     const x = self.pop(k, r, s);
-                    self.push(y, r, s);
-                    self.push(z, r, s);
-                    self.push(x, r, s);
+                    self.push(y, r, s); // y
+                    self.push(z, r, s); // y z
+                    self.push(x, r, s); // y z x
                 },
                 .DUP => {
                     // TODO: test DUP
@@ -274,9 +294,9 @@ const CPU = struct {
                     const y = self.pop(k, r, s);
                     const x = self.pop(k, r, s);
                     if (x == y) {
-                        self.push(1, r, s);
+                        self.push(1, r, 0);
                     } else {
-                        self.push(0, r, s);
+                        self.push(0, r, 0);
                     }
                 },
                 .NEQ => {
@@ -284,9 +304,9 @@ const CPU = struct {
                     const y = self.pop(k, r, s);
                     const x = self.pop(k, r, s);
                     if (x != y) {
-                        self.push(1, r, s);
+                        self.push(1, r, 0);
                     } else {
-                        self.push(0, r, s);
+                        self.push(0, r, 0);
                     }
                 },
                 .GTH => {
@@ -294,9 +314,9 @@ const CPU = struct {
                     const y = self.pop(k, r, s);
                     const x = self.pop(k, r, s);
                     if (x > y) {
-                        self.push(1, r, s);
+                        self.push(1, r, 0);
                     } else {
-                        self.push(0, r, s);
+                        self.push(0, r, 0);
                     }
                 },
                 .LTH => {
@@ -304,9 +324,9 @@ const CPU = struct {
                     const y = self.pop(k, r, s);
                     const x = self.pop(k, r, s);
                     if (x < y) {
-                        self.push(1, r, s);
+                        self.push(1, r, 0);
                     } else {
-                        self.push(0, r, s);
+                        self.push(0, r, 0);
                     }
                 },
                 .JMP => {
@@ -318,12 +338,12 @@ const CPU = struct {
                     //TODO: test JCN
                     const x = self.pop(k, r, s);
                     const b = self.pop(k, r, 0);
-                    if ( b == 1 ) self.jump(x, s);
+                    if ( b != 0 ) self.jump(x, s);
                 },
                 .JSR => {
                     //TODO: test JSR
                     const x = self.pop(k, r, s);
-                    self.push(self.pc + 1, r ^ 1, 1);
+                    self.push(self.pc, r ^ 1, 1);
                     self.jump(x, s);
                 },
                 .STH => {
@@ -444,6 +464,10 @@ const LIT2  = 0xa0;
 const LITr  = 0xc0;
 const LIT2r = 0xe0;
 const BRK= 0x00;
+
+const JCI = 0x20; 
+const JMI = 0x40; 
+const JSI = 0x60; 
 
 // 0x00 BRK    0x80 LIT
 // 0x20 JCI    0xa0 LIT2
