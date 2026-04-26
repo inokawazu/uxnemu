@@ -65,17 +65,69 @@ const Instruction = packed struct {
     fn to_u8(self: Instruction) u8 {
         return @bitCast(self);
     }
+
+    pub fn format(self: Instruction, writer: *std.io.Writer) !void {
+        switch (self.opcode) {
+            .BRK => {
+                switch (self.to_u8()) {
+                    LIT2, LIT2r, LIT, LITr => { 
+                        try writer.print("LIT", .{}); 
+                        if (self.short_mode == 1) try writer.print("2", .{}); 
+                        if (self.return_mode == 1) try writer.print("r", .{}); 
+                        return;
+                    },
+                    BRK =>  { return try writer.print("JCI", .{});  },
+                    JCI =>  { return try writer.print("JCI", .{}); },
+                    JMI =>  { return try writer.print("JMI", .{}); },
+                    JSI =>  { return try writer.print("JSI", .{}); },
+                    else => { return try writer.print("UNK", .{}); },
+                }
+            },
+            .INC => { try writer.print("INC", .{}); },
+            .POP => { try writer.print("POP", .{}); },
+            .NIP => { try writer.print("NIP", .{}); },
+            .SWP => { try writer.print("SWP", .{}); },
+            .ROT => { try writer.print("ROT", .{}); },
+            .DUP => { try writer.print("DUP", .{}); },
+            .OVR => { try writer.print("OVR", .{}); },
+            .EQU => { try writer.print("EQU", .{}); },
+            .NEQ => { try writer.print("NEQ", .{}); },
+            .GTH => { try writer.print("GTH", .{}); },
+            .LTH => { try writer.print("LTH", .{}); },
+            .JMP => { try writer.print("JMP", .{}); },
+            .JCN => { try writer.print("JCN", .{}); },
+            .JSR => { try writer.print("JSR", .{}); },
+            .STH => { try writer.print("STH", .{}); },
+            .LDZ => { try writer.print("LDZ", .{}); },
+            .STZ => { try writer.print("STZ", .{}); },
+            .LDR => { try writer.print("LDR", .{}); },
+            .STR => { try writer.print("STR", .{}); },
+            .LDA => { try writer.print("LDA", .{}); },
+            .STA => { try writer.print("STA", .{}); },
+            .DEI => { try writer.print("DEI", .{}); },
+            .DEO => { try writer.print("DEO", .{}); },
+            .ADD => { try writer.print("ADD", .{}); },
+            .SUB => { try writer.print("SUB", .{}); },
+            .MUL => { try writer.print("MUL", .{}); },
+            .DIV => { try writer.print("DIV", .{}); },
+            .AND => { try writer.print("AND", .{}); },
+            .ORA => { try writer.print("ORA", .{}); },
+            .EOR => { try writer.print("EOR", .{}); },
+            .SFT => { try writer.print("SFT", .{}); },
+        }
+        if (self.short_mode == 1) try writer.print("2", .{}); 
+        if (self.short_mode == 1) try writer.print("k", .{}); 
+        if (self.return_mode == 1) try writer.print("r", .{}); 
+    }
 };
 
 // TODO: make stacks circular
-const Stack = [0xFF + 1]u8;
+const Stack = [0x100]u8;
 
 // const DeviceMemory= [0xFF + 1]u8;
-const RAM = [0xFFFF + 1]u8;
+const RAM = [0x10000]u8;
 
-// #abcd is equivalent to #ab #cd
-
-const START_PC = 0x100;
+const START_PC: u16 = 0x100;
 
 fn mword(bu: u8, bl: u8) u16 {
     return (@as(u16, bu) << 8) | @as(u16, bl);
@@ -87,44 +139,22 @@ fn rel_offset(pc: u16, offset: u16) u16 {
     return @intCast(rel + @as(i32, pc));
 }
 
-// fn make_cpu(dei: fn (u16, u1) u16, deo: fn (u16, u16, u1) void) type {
-//     return ;
-// }
+const EvalDEI = struct {
+    addr: u16,
+    short_mode: u1,
+    return_mode: u1,
+};
 
-
-// fn console_dei(dev: u16, s: u1) u16 {
-//     const addr: u8 = @truncate(dev);
-// }
-
-// fn console_deo(dev: u16, x: u16, s: u1) u16 {
-// }
-
-
-// fn test_dei(dev: u16, s: u1) u16 {
-//     _ = s;
-//     _ = dev;
-//     return 0;
-// }
-
-// fn test_deo(dev: u16, x: u16, s: u1) void {
-//     _ = s;
-//     _ = dev;
-//     _ = x;
-// }
-
-// const Test_CPU = make_cpu(test_dei, test_deo);
+const EvalDEO = struct {
+    addr: u16,
+    value: u16,
+    short_mode: u1,
+};
 
 const EvalReturn = union(enum) {
     brk,
-    deo: struct {
-        addr: u16,
-        value: u16,
-        short_mode: u1,
-    },
-    dei: struct {
-        addr: u16,
-        short_mode: u1,
-    },
+    deo: EvalDEO,
+    dei: EvalDEI,
 };
 
 const CPU = struct {
@@ -148,19 +178,12 @@ const CPU = struct {
         };
     }
 
-    pub fn load_program(self: *Self, program: []const u8) void {
+    pub fn load_rom(self: *Self, program: []const u8) void {
         for (program, START_PC..) |program_memory, ram_i| {
             self.ram[ram_i] = program_memory;
         }
     }
 
-    pub fn load_rom(self: *Self, rom: []const u8) void {
-        for (rom, 0..) |program_memory, ram_i| {
-            self.ram[ram_i] = program_memory;
-        }
-    }
-    
-    
     // pop working stack
     fn popw(self: *Self, k: u1, s: u1) u16 {
         var out: u16 = self.ws[self.wp - 1];
@@ -170,7 +193,7 @@ const CPU = struct {
         if (k != 1) self.wp -= 1 + @as(u8, s);
         return out;
     }
-    
+
     // push working stack
     fn pushw(self: *Self, value: u16, s: u1) void {
         if (s==1) {
@@ -246,9 +269,17 @@ const CPU = struct {
         }
     }
 
-    pub fn eval(self: *Self) EvalReturn {
+    const eval = cpu_eval;
+};
+
+const DEIHandler = fn (self: *CPU, addr: u16, s: u1) u16;
+const DEOHandler = fn (self: *CPU, addr: u16, x: u16, s: u1) void;
+
+pub fn cpu_eval(self: *CPU, dei: DEIHandler, deo: DEOHandler) void {
         while (true) {
             const next_inst = Instruction.from_u8(self.ram[self.pc]);
+
+            // std.debug.print("Evaluating {f} (pc = 0x{X:0>4})\n", .{next_inst, self.pc});
             self.pc += 1;
 
             const k = next_inst.keep_mode;
@@ -267,7 +298,10 @@ const CPU = struct {
                             self.push(x, r, s);
                             self.pc += 2;
                         },
-                        BRK => { return .brk; },
+                        BRK => { 
+                            return;
+                            // return .brk;
+                        },
                         JCI => {
                             const b= self.pop(k, r, s);
                             if (b != 0) {
@@ -431,21 +465,20 @@ const CPU = struct {
                 .DEI => {
                     //TODO: test DEI and implement
                     const dev = self.pop(k, r, 0);
-                    // const x = dei(dev, s);
-                    // self.push(x, r, s);
-                    // return .{ .addr = dev, .value = x, .short_mode = s };
-                    return .{ .dei =
-                        .{ .addr = dev, .short_mode = s } 
-                    } ;
+                    const x = dei(self, dev, s);
+                    self.push(x, r, s);
+                    // return .{ .dei =
+                    //     .{ .addr = dev, .short_mode = s, .return_mode = r } 
+                    // } ;
                 },
                 .DEO => {
                     //TODO: test DEO and implement
                     const dev = self.pop(k, r, 0);
                     const x = self.pop(k, r, s);
-                    // deo(dev, x, s);
-                    return .{ .deo = 
-                        .{.addr = dev, .value = x, .short_mode = s}
-                    };
+                    deo(self, dev, x, s);
+                    // return .{ .deo = 
+                    //     .{.addr = dev, .value = x, .short_mode = s}
+                    // };
                 },
                 .ADD => {
                     const y = self.pop(k, r, s);
@@ -491,10 +524,16 @@ const CPU = struct {
                     self.push((x >> ln) << rn, r, s);
                 },
             }
-        }
+        }       
     }
-};
 
+
+
+fn dummy_dei(_: *CPU, _: u16, _: u1) u16 {
+    return 0;
+}
+
+fn dummy_deo(_: *CPU, _: u16, _: u16, _: u1) void { }
 
 test "SWP" {
     const swp: Instruction = .{.opcode = .SWP};
@@ -512,8 +551,8 @@ test "SWP" {
     };
 
     var cpu = CPU.init();
-    cpu.load_program(&test_program);
-    _ = cpu.eval();
+    cpu.load_rom(&test_program);
+    _ = cpu.eval(dummy_dei, dummy_deo);
     try std.testing.expectEqualSlices(u8, &[_]u8{0x78, 0x56, 0x12, 0x34}, cpu.ws[0..4]);
     try std.testing.expectEqual(4, cpu.wp);
 }
@@ -529,8 +568,8 @@ test "NIP" {
     };
 
     var cpu = CPU.init();
-    cpu.load_program(&test_program);
-    _ = cpu.eval();
+    cpu.load_rom(&test_program);
+    _ = cpu.eval(dummy_dei, dummy_deo);
 
     try std.testing.expectEqual(1, cpu.wp);
     try std.testing.expectEqual(cpu.peekw(), 0x34);
@@ -549,8 +588,8 @@ test "test LIT2 and POP2" {
     };
 
     var cpu = CPU.init();
-    cpu.load_program(&test_program);
-    _ = cpu.eval();
+    cpu.load_rom(&test_program);
+    _ = cpu.eval(dummy_dei, dummy_deo);
 
     // try std.testing.expectEqual(5, cpu.peekw());
     try std.testing.expectEqual(4, cpu.wp);
@@ -579,8 +618,8 @@ test "ROT" {
         BRK,
     };
     var cpu = CPU.init();
-    cpu.load_program(&test_program);
-    _ = cpu.eval();
+    cpu.load_rom(&test_program);
+    _ = cpu.eval(dummy_dei, dummy_deo);
 
     try std.testing.expectEqual(3, cpu.wp);
     try std.testing.expectEqualSlices(u8, &[_]u8{2, 3, 1,}, cpu.ws[0..cpu.wp]);
@@ -599,8 +638,8 @@ test "DUP" {
         BRK,
     };
     var cpu = CPU.init();
-    cpu.load_program(&test_program);
-    _ = cpu.eval();
+    cpu.load_rom(&test_program);
+    _ = cpu.eval(dummy_dei, dummy_deo);
 
     try std.testing.expectEqual(6, cpu.wp);
     const expected_ws = [_]u8{1} ** 6;
@@ -610,7 +649,7 @@ test "DUP" {
 test "test program INC five times, starting from 0x00" {
     const _inc: Instruction = .{.opcode = .INC};
     const inc = _inc.to_u8();
-    
+
     const test_program = [_]u8 {
         LIT,
         0x00,
@@ -619,8 +658,8 @@ test "test program INC five times, starting from 0x00" {
     };
 
     var cpu = CPU.init();
-    cpu.load_program(&test_program);
-    _ = cpu.eval();
+    cpu.load_rom(&test_program);
+    _ = cpu.eval(dummy_dei, dummy_deo);
 
     try std.testing.expectEqual(5, cpu.peekw());
     try std.testing.expectEqual(1, cpu.wp);
@@ -628,7 +667,7 @@ test "test program INC five times, starting from 0x00" {
 
 test "test program to find 1 + 2 = 3" {
     const add: Instruction = .{.opcode = .ADD};
-    
+
     // 1 + 2
     const test_program = [_]u8 {
         LIT,
@@ -640,9 +679,10 @@ test "test program to find 1 + 2 = 3" {
     };
 
     var cpu = CPU.init();
-    cpu.load_program(&test_program);
-    _ = cpu.eval();
+    cpu.load_rom(&test_program);
+    cpu.eval(dummy_dei, dummy_deo);
 
+    // try std.testing.expectEqual(.brk, eval_value);
     try std.testing.expectEqual(3, cpu.peekw());
     try std.testing.expectEqual(1, cpu.wp);
 }
