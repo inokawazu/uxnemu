@@ -2,55 +2,54 @@ const std = @import("std");
 
 const Opcode = enum(u5) {
     BRK = 0x00,
-    EQU = 0x08,
-    LDZ = 0x10,
-    ADD = 0x18,
     INC = 0x01,
-    NEQ = 0x09,
-    STZ = 0x11,
-    SUB = 0x19,
     POP = 0x02,
-    GTH = 0x0a,
-    LDR = 0x12,
-    MUL = 0x1a,
     NIP = 0x03,
-    LTH = 0x0b,
-    STR = 0x13,
-    DIV = 0x1b,
     SWP = 0x04,
-    JMP = 0x0c,
-    LDA = 0x14,
-    AND = 0x1c,
     ROT = 0x05,
-    JCN = 0x0d,
-    STA = 0x15,
-    ORA = 0x1d,
     DUP = 0x06,
-    JSR = 0x0e,
-    DEI = 0x16,
-    EOR = 0x1e,
     OVR = 0x07,
+    EQU = 0x08,
+    NEQ = 0x09,
+    GTH = 0x0a,
+    LTH = 0x0b,
+    JMP = 0x0c,
+    JCN = 0x0d,
+    JSR = 0x0e,
     STH = 0x0f,
+    LDZ = 0x10,
+    STZ = 0x11,
+    LDR = 0x12,
+    STR = 0x13,
+    LDA = 0x14,
+    STA = 0x15,
+    DEI = 0x16,
     DEO = 0x17,
+    ADD = 0x18,
+    SUB = 0x19,
+    MUL = 0x1a,
+    DIV = 0x1b,
+    AND = 0x1c,
+    ORA = 0x1d,
+    EOR = 0x1e,
     SFT = 0x1f,
 };
 
-const LIT   = 0x80;
-const LIT2  = 0xa0;
-const LITr  = 0xc0;
-const LIT2r = 0xe0;
-const BRK= 0x00;
-
-const JCI = 0x20; 
-const JMI = 0x40; 
-const JSI = 0x60; 
+const LIT:   u8   = 0x80;
+const LIT2:  u8   = 0xa0;
+const LITr:  u8   = 0xc0;
+const LIT2r: u8   = 0xe0;
+const BRK:   u8   = 0x00;
+const JCI:   u8   = 0x20; 
+const JMI:   u8   = 0x40; 
+const JSI:   u8   = 0x60; 
 
 
 // Holds Instruction data
 // data lay out 'kr2ooooo'
 // k = k mode
 // r = r mode
-// 2 = 2 mode (short mode)
+// 2 = '2 mode' (short mode)
 // o = opcode
 const Instruction = packed struct {
     opcode: Opcode = Opcode.BRK,
@@ -135,10 +134,15 @@ fn mword(bu: u8, bl: u8) u16 {
     return (@as(u16, bu) << 8) | @as(u16, bl);
 }
 
-fn rel_offset(pc: u16, offset: u16) u16 {
-    const offest_u8: u8 = @truncate(offset);
-    const rel: i8 = @bitCast(offest_u8);
-    return @intCast(rel + @as(i32, pc));
+fn rel_offset(pc: u16, offset: u8) u16 {
+    // test the minus sign, which is the most significant bit.
+    const has_minus= offset & (1 << 7) != 0;
+    if (has_minus) {
+        const rel = ~offset + 1;
+        return pc - rel;
+    } else {
+        return pc + offset;
+    }
 }
 
 const EvalDEI = struct {
@@ -250,7 +254,7 @@ pub const CPU = struct {
         if (s == 1) {
             self.pc = addr;
         } else {
-            self.pc = rel_offset(self.pc, addr);
+            self.pc = rel_offset(self.pc, @truncate(addr));
         }
     }
 
@@ -282,7 +286,6 @@ fn cpu_eval(self: *CPU, dei: DEIHandler, deo: DEOHandler) void {
             const next_inst = Instruction.from_u8(self.ram[self.pc]);
 
             // std.debug.print("{f} (pc = 0x{X:0>4})\n", .{next_inst, self.pc});
-
             self.pc += 1;
 
             const k = next_inst.keep_mode;
@@ -309,29 +312,27 @@ fn cpu_eval(self: *CPU, dei: DEIHandler, deo: DEOHandler) void {
                             const b= self.pop(k, r, 0);
                             if (b != 0) {
                                 const x = self.fetch(self.pc, 1);
-                                // std.debug.print("jumping to 0x{x}\n", .{x + self.pc + 2});
-                                self.pc = @addWithOverflow(self.pc, 2)[0];
                                 self.pc = @addWithOverflow(self.pc, x)[0];
-                            } else {
-                                self.pc += 2;
                             }
+                            self.pc = @addWithOverflow(self.pc, 2)[0];
                         },
                         JMI => {
                             const x = self.fetch(self.pc, 1);
-                            self.pc = @addWithOverflow(self.pc, 2)[0];
                             self.pc = @addWithOverflow(self.pc, x)[0];
+                            self.pc = @addWithOverflow(self.pc, 2)[0];
                         },
                         JSI => {
                             const rel = self.fetch(self.pc, 1);
                             self.push(self.pc + 2, 1, 1);
-                            self.pc = @addWithOverflow(self.pc, 2)[0];
                             self.pc = @addWithOverflow(self.pc, rel)[0];
+                            self.pc = @addWithOverflow(self.pc, 2)[0];
                         },
                         else => { unreachable; },
                     }
                 },
                 .INC => {
-                    self.push(self.pop(k, r, s) + 1, r, s);
+                    const y = self.pop(k, r, s);
+                    self.push(y + 1, r, s);
                 },
                 .POP => {
                     _ = self.pop(k, r, s);
@@ -373,41 +374,25 @@ fn cpu_eval(self: *CPU, dei: DEIHandler, deo: DEOHandler) void {
                     // TODO: test EQU
                     const y = self.pop(k, r, s);
                     const x = self.pop(k, r, s);
-                    if (x == y) {
-                        self.push(1, r, 0);
-                    } else {
-                        self.push(0, r, 0);
-                    }
+                    self.push(if (x == y) 1 else 0, r, 0);
                 },
                 .NEQ => {
                     // TODO: test NEQ
                     const y = self.pop(k, r, s);
                     const x = self.pop(k, r, s);
-                    if (x != y) {
-                        self.push(1, r, 0);
-                    } else {
-                        self.push(0, r, 0);
-                    }
+                    self.push(if (x != y) 1 else 0, r, 0);
                 },
                 .GTH => {
                     // TODO: test GTH
                     const y = self.pop(k, r, s);
                     const x = self.pop(k, r, s);
-                    if (x > y) {
-                        self.push(1, r, 0);
-                    } else {
-                        self.push(0, r, 0);
-                    }
+                    self.push(if (x > y) 1 else 0, r, 0);
                 },
                 .LTH => {
                     // TODO: test LTH
                     const y = self.pop(k, r, s);
                     const x = self.pop(k, r, s);
-                    if (x < y) {
-                        self.push(1, r, 0);
-                    } else {
-                        self.push(0, r, 0);
-                    }
+                    self.push(if (x < y) 1 else 0, r, 0);
                 },
                 .JMP => {
                     //TODO: test JMP
@@ -446,7 +431,7 @@ fn cpu_eval(self: *CPU, dei: DEIHandler, deo: DEOHandler) void {
                 .LDR => {
                     //TODO: test LDR
                     const rel = self.pop(k, r, 0);
-                    const addr = rel_offset(self.pc, rel);
+                    const addr = rel_offset(self.pc, @truncate(rel));
                     const x = self.fetch(addr, s);
                     self.push(x, r, s);
                 },
@@ -454,13 +439,11 @@ fn cpu_eval(self: *CPU, dei: DEIHandler, deo: DEOHandler) void {
                     //TODO: test STR
                     const rel = self.pop(k, r, 0);
                     const x = self.pop(k, r, s);
-                    const addr = rel_offset(self.pc, rel);
+                    const addr = rel_offset(self.pc, @truncate(rel));
                     self.store(x, addr, s);
                 },
                 .LDA => {
                     //TODO: test LDA
-                    // std.debug.dumpHex(self.ws[0..32] );
-                    // std.debug.print("STACK POINTER {x}\n", .{self.wp});
                     const addr = self.pop(k, r, 1);
                     const x = self.fetch(addr, s);
                     self.push(x, r, s);
@@ -476,23 +459,17 @@ fn cpu_eval(self: *CPU, dei: DEIHandler, deo: DEOHandler) void {
                     const dev = self.pop(k, r, 0);
                     const x = dei(self, dev, s);
                     self.push(x, r, s);
-                    // return .{ .dei =
-                    //     .{ .addr = dev, .short_mode = s, .return_mode = r } 
-                    // } ;
                 },
                 .DEO => {
                     //TODO: test DEO and implement
                     const dev = self.pop(k, r, 0);
                     const x = self.pop(k, r, s);
                     deo(self, dev, x, s);
-                    // return .{ .deo = 
-                    //     .{.addr = dev, .value = x, .short_mode = s}
-                    // };
                 },
                 .ADD => {
                     const y = self.pop(k, r, s);
                     const x = self.pop(k, r, s);
-                    self.push(x + y, r, s);
+                    self.push(y + x, r, s);
                 },
                 .SUB => {
                     const y = self.pop(k, r, s);
@@ -770,4 +747,14 @@ test "mem fetching" {
 }
 
 
+test "testing rel_offset for various values positive and negative" {
+    const i8_offests = [_]i8{-5, -100, 0, 1, -69, 50};
+    const base: u16 = 0x0420;
+    const i32_base: i32 = @intCast(base);
 
+    for (i8_offests) |i8_offset| {
+        const expected = i32_base + i8_offset;
+        const actual = rel_offset(base, @bitCast(i8_offset));
+        try std.testing.expectEqual(expected, actual);
+    }
+}
