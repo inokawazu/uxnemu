@@ -1,5 +1,5 @@
 const std = @import("std");
-const uxn = @import("uxnemu");
+const uxn = @import("uxn");
 const print = @import("std").debug.print;
 
 
@@ -50,7 +50,7 @@ pub fn main() !void {
 
     if (args.len < 2) {
         //add error
-        print("no args found", .{});
+        print("no args found\n", .{});
         return;
     }
 
