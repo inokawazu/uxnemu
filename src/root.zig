@@ -74,13 +74,14 @@ const Instruction = packed struct {
                         try writer.print("LIT", .{}); 
                         if (self.short_mode == 1) try writer.print("2", .{}); 
                         if (self.return_mode == 1) try writer.print("r", .{}); 
+                        try writer.print("({x:0>2})", .{ self.to_u8() });
                         return;
                     },
-                    BRK =>  { return try writer.print("JCI", .{});  },
-                    JCI =>  { return try writer.print("JCI", .{}); },
-                    JMI =>  { return try writer.print("JMI", .{}); },
-                    JSI =>  { return try writer.print("JSI", .{}); },
-                    else => { return try writer.print("UNK", .{}); },
+                    BRK =>  { return try writer.print("BRK({x:0>2})", .{self.to_u8()});  },
+                    JCI =>  { return try writer.print("JCI({x:0>2})", .{self.to_u8()}); },
+                    JMI =>  { return try writer.print("JMI({x:0>2})", .{self.to_u8()}); },
+                    JSI =>  { return try writer.print("JSI({x:0>2})", .{self.to_u8()}); },
+                    else => { return try writer.print("UNK({x:0>2})", .{self.to_u8()}); },
                 }
             },
             .INC => { try writer.print("INC", .{}); },
@@ -116,8 +117,9 @@ const Instruction = packed struct {
             .SFT => { try writer.print("SFT", .{}); },
         }
         if (self.short_mode == 1) try writer.print("2", .{}); 
-        if (self.short_mode == 1) try writer.print("k", .{}); 
+        if (self.keep_mode == 1) try writer.print("k", .{}); 
         if (self.return_mode == 1) try writer.print("r", .{}); 
+        try writer.print("({x:0>2})", .{ self.to_u8() });
     }
 };
 
@@ -157,7 +159,7 @@ const EvalReturn = union(enum) {
     dei: EvalDEI,
 };
 
-const CPU = struct {
+pub const CPU = struct {
     rp: u8,
     rs: Stack,
     wp: u8,
@@ -269,17 +271,18 @@ const CPU = struct {
         }
     }
 
-    const eval = cpu_eval;
+    pub const eval = cpu_eval;
 };
 
 const DEIHandler = fn (self: *CPU, addr: u16, s: u1) u16;
 const DEOHandler = fn (self: *CPU, addr: u16, x: u16, s: u1) void;
 
-pub fn cpu_eval(self: *CPU, dei: DEIHandler, deo: DEOHandler) void {
+fn cpu_eval(self: *CPU, dei: DEIHandler, deo: DEOHandler) void {
         while (true) {
             const next_inst = Instruction.from_u8(self.ram[self.pc]);
 
-            // std.debug.print("Evaluating {f} (pc = 0x{X:0>4})\n", .{next_inst, self.pc});
+            // std.debug.print("{f} (pc = 0x{X:0>4})\n", .{next_inst, self.pc});
+
             self.pc += 1;
 
             const k = next_inst.keep_mode;
@@ -300,25 +303,29 @@ pub fn cpu_eval(self: *CPU, dei: DEIHandler, deo: DEOHandler) void {
                         },
                         BRK => { 
                             return;
-                            // return .brk;
                         },
                         JCI => {
-                            const b= self.pop(k, r, s);
+                            // TODO: test JCI
+                            const b= self.pop(k, r, 0);
                             if (b != 0) {
-                                const x = mword(self.ram[self.pc], self.ram[self.pc + 1]);
+                                const x = self.fetch(self.pc, 1);
+                                // std.debug.print("jumping to 0x{x}\n", .{x + self.pc + 2});
+                                self.pc = @addWithOverflow(self.pc, 2)[0];
                                 self.pc = @addWithOverflow(self.pc, x)[0];
                             } else {
                                 self.pc += 2;
                             }
                         },
                         JMI => {
-                            const x = mword(self.ram[self.pc], self.ram[self.pc + 1]);
+                            const x = self.fetch(self.pc, 1);
+                            self.pc = @addWithOverflow(self.pc, 2)[0];
                             self.pc = @addWithOverflow(self.pc, x)[0];
                         },
                         JSI => {
+                            const rel = self.fetch(self.pc, 1);
                             self.push(self.pc + 2, 1, 1);
-                            const x = mword(self.ram[self.pc], self.ram[self.pc + 1]);
-                            self.pc = @addWithOverflow(self.pc, x)[0];
+                            self.pc = @addWithOverflow(self.pc, 2)[0];
+                            self.pc = @addWithOverflow(self.pc, rel)[0];
                         },
                         else => { unreachable; },
                     }
@@ -452,6 +459,8 @@ pub fn cpu_eval(self: *CPU, dei: DEIHandler, deo: DEOHandler) void {
                 },
                 .LDA => {
                     //TODO: test LDA
+                    // std.debug.dumpHex(self.ws[0..32] );
+                    // std.debug.print("STACK POINTER {x}\n", .{self.wp});
                     const addr = self.pop(k, r, 1);
                     const x = self.fetch(addr, s);
                     self.push(x, r, s);
@@ -701,6 +710,21 @@ test "init CPU" {
     try std.testing.expect(!not_okay);
 }
 
+test "check 0x37 = DEO2" {
+    const deo2: u8 = 0x37;
+    const inst: Instruction = .{
+        .keep_mode = 0,
+        .return_mode = 0,
+        .short_mode = 1,
+        .opcode = .DEO 
+    };
+    try std.testing.expectEqual(inst.opcode, Opcode.DEO);
+    try std.testing.expectEqual(inst.short_mode, 1);
+    try std.testing.expectEqual(inst.return_mode, 0);
+    try std.testing.expectEqual(inst.keep_mode, 0);
+    try std.testing.expectEqual(inst.to_u8(), deo2);
+}
+
 test "check 0xb8 = ADD2k" {
     const add2k: u8 = 0xb8;
     const inst = Instruction.from_u8(add2k);
@@ -720,3 +744,30 @@ test "check 0xb8 = JMPrk" {
     try std.testing.expectEqual(inst.keep_mode, 1);
     try std.testing.expectEqual(inst.to_u8(), jmprk);
 }
+
+test "mem fetching" {
+    var cpu = CPU.init();
+    const values = [_]u8{1,2,3,4,5};
+    for (values) |value| {
+        cpu.store(value, 0x00 + value, 0);
+    }
+
+    for (values) |value| {
+        const fetched = cpu.fetch(0x00 + value, 0);
+        try std.testing.expectEqual(value, fetched);
+    }
+
+    @memset(&cpu.ram, 0);
+
+    for (values) |value| {
+        cpu.store(value, 0x00 + 2*value, 1);
+    }
+
+    for (values) |value| {
+        const fetched = cpu.fetch(0x00 + 2*value + 1, 0);
+        try std.testing.expectEqual(value, fetched);
+    }
+}
+
+
+
