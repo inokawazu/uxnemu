@@ -278,10 +278,10 @@ pub const CPU = struct {
     pub const eval = cpu_eval;
 };
 
-const DEIHandler = fn (self: *CPU, addr: u16, s: u1) u16;
-const DEOHandler = fn (self: *CPU, addr: u16, x: u16, s: u1) void;
+pub const DEIHandler = fn (io: std.Io, self: *CPU, addr: u16, s: u1) u16;
+pub const DEOHandler = fn (io: std.Io, self: *CPU, addr: u16, x: u16, s: u1) void;
 
-fn cpu_eval(self: *CPU, dei: DEIHandler, deo: DEOHandler) void {
+fn cpu_eval(self: *CPU, io: std.Io, dei: DEIHandler, deo: DEOHandler) void {
         while (true) {
             const next_inst = Instruction.from_u8(self.ram[self.pc]);
 
@@ -457,14 +457,14 @@ fn cpu_eval(self: *CPU, dei: DEIHandler, deo: DEOHandler) void {
                 .DEI => {
                     //TODO: test DEI and implement
                     const dev = self.pop(k, r, 0);
-                    const x = dei(self, dev, s);
+                    const x = dei(io, self, dev, s);
                     self.push(x, r, s);
                 },
                 .DEO => {
                     //TODO: test DEO and implement
                     const dev = self.pop(k, r, 0);
                     const x = self.pop(k, r, s);
-                    deo(self, dev, x, s);
+                    deo(io, self, dev, x, s);
                 },
                 .ADD => {
                     const y = self.pop(k, r, s);
@@ -515,13 +515,23 @@ fn cpu_eval(self: *CPU, dei: DEIHandler, deo: DEOHandler) void {
 
 
 
-fn dummy_dei(_: *CPU, _: u16, _: u1) u16 {
+fn dummy_dei(io: std.Io, _: *CPU, _: u16, _: u1) u16 {
+    _ = io;
     return 0;
 }
 
-fn dummy_deo(_: *CPU, _: u16, _: u16, _: u1) void { }
+fn dummy_deo(io: std.Io, _: *CPU, _: u16, _: u16, _: u1) void {
+
+    _ = io;
+}
+
+fn dummy_io() std.Io {
+    var threaded = std.Io.Threaded.init_single_threaded;
+    return threaded.io();
+}
 
 test "SWP" {
+    const io = dummy_io();
     const swp: Instruction = .{.opcode = .SWP};
     const swp2: Instruction = .{.opcode = .SWP, .short_mode = 1};
     const test_program = [_]u8 {
@@ -538,12 +548,13 @@ test "SWP" {
 
     var cpu = CPU.init();
     cpu.load_rom(&test_program);
-    _ = cpu.eval(dummy_dei, dummy_deo);
+    _ = cpu.eval(io, dummy_dei, dummy_deo);
     try std.testing.expectEqualSlices(u8, &[_]u8{0x78, 0x56, 0x12, 0x34}, cpu.ws[0..4]);
     try std.testing.expectEqual(4, cpu.wp);
 }
 
 test "NIP" {
+    const io = dummy_io();
     const nip: Instruction = .{.opcode = .NIP};
     const test_program = [_]u8 {
         LIT2,
@@ -555,13 +566,14 @@ test "NIP" {
 
     var cpu = CPU.init();
     cpu.load_rom(&test_program);
-    _ = cpu.eval(dummy_dei, dummy_deo);
+    _ = cpu.eval(io, dummy_dei, dummy_deo);
 
     try std.testing.expectEqual(1, cpu.wp);
     try std.testing.expectEqual(cpu.peekw(), 0x34);
 }
 
 test "test LIT2 and POP2" {
+    const io = dummy_io();
 
     const test_program = [_]u8 {
         LIT2,
@@ -575,7 +587,7 @@ test "test LIT2 and POP2" {
 
     var cpu = CPU.init();
     cpu.load_rom(&test_program);
-    _ = cpu.eval(dummy_dei, dummy_deo);
+    _ = cpu.eval(io, dummy_dei, dummy_deo);
 
     // try std.testing.expectEqual(5, cpu.peekw());
     try std.testing.expectEqual(4, cpu.wp);
@@ -593,6 +605,7 @@ test "test LIT2 and POP2" {
 
 
 test "ROT" {
+    const io = dummy_io();
     const rot: Instruction = .{ .opcode = .ROT };
     const test_program = [_]u8 {
         LIT2,
@@ -605,13 +618,14 @@ test "ROT" {
     };
     var cpu = CPU.init();
     cpu.load_rom(&test_program);
-    _ = cpu.eval(dummy_dei, dummy_deo);
+    _ = cpu.eval(io, dummy_dei, dummy_deo);
 
     try std.testing.expectEqual(3, cpu.wp);
     try std.testing.expectEqualSlices(u8, &[_]u8{2, 3, 1,}, cpu.ws[0..cpu.wp]);
 }
 
 test "DUP" {
+    const io = dummy_io();
     const dup: Instruction = .{ .opcode = .DUP };
     const dupk: Instruction = .{ .opcode = .DUP, .keep_mode = 1 };
     const dup2: Instruction = .{ .opcode = .DUP, .short_mode = 1 };
@@ -625,7 +639,7 @@ test "DUP" {
     };
     var cpu = CPU.init();
     cpu.load_rom(&test_program);
-    _ = cpu.eval(dummy_dei, dummy_deo);
+    _ = cpu.eval(io, dummy_dei, dummy_deo);
 
     try std.testing.expectEqual(6, cpu.wp);
     const expected_ws = [_]u8{1} ** 6;
@@ -633,6 +647,7 @@ test "DUP" {
 }
 
 test "test program INC five times, starting from 0x00" {
+    const io = dummy_io();
     const _inc: Instruction = .{.opcode = .INC};
     const inc = _inc.to_u8();
 
@@ -645,13 +660,14 @@ test "test program INC five times, starting from 0x00" {
 
     var cpu = CPU.init();
     cpu.load_rom(&test_program);
-    _ = cpu.eval(dummy_dei, dummy_deo);
+    _ = cpu.eval(io, dummy_dei, dummy_deo);
 
     try std.testing.expectEqual(5, cpu.peekw());
     try std.testing.expectEqual(1, cpu.wp);
 }
 
 test "test program to find 1 + 2 = 3" {
+    const io = dummy_io();
     const add: Instruction = .{.opcode = .ADD};
 
     // 1 + 2
@@ -666,7 +682,7 @@ test "test program to find 1 + 2 = 3" {
 
     var cpu = CPU.init();
     cpu.load_rom(&test_program);
-    cpu.eval(dummy_dei, dummy_deo);
+    cpu.eval(io, dummy_dei, dummy_deo);
 
     // try std.testing.expectEqual(.brk, eval_value);
     try std.testing.expectEqual(3, cpu.peekw());
