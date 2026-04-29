@@ -8,6 +8,7 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/uxn.zig"),
         .target = target,
     });
+    
 
     const exe = b.addExecutable(.{
         .name = "uxncli",
@@ -37,6 +38,13 @@ pub fn build(b: *std.Build) void {
 
 
 
+    const raylib_lib = b.dependency("raylib", .{
+        .target = target,
+        .optimize = optimize,
+        .platform = .glfw,
+    });
+    const raylib = raylib_lib.module("raylib");
+
     const exe_ray = b.addExecutable(.{
         .name = "uxnray",
         .root_module = b.createModule(.{
@@ -48,6 +56,8 @@ pub fn build(b: *std.Build) void {
             },
         }),
     });
+
+    exe_ray.root_module.addImport("raylib", raylib);
 
     b.installArtifact(exe_ray);
 
@@ -61,6 +71,8 @@ pub fn build(b: *std.Build) void {
     if (b.args) |args| {
         run_ray_cmd.addArgs(args);
     }
+
+
 
 
 
