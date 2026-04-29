@@ -10,9 +10,9 @@ pub fn build(b: *std.Build) void {
     });
 
     const exe = b.addExecutable(.{
-        .name = "uxnemu",
+        .name = "uxncli",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/main.zig"),
+            .root_source_file = b.path("src/platforms/console.zig"),
             .target = target,
             .optimize = optimize,
             .imports = &.{
@@ -23,7 +23,7 @@ pub fn build(b: *std.Build) void {
 
     b.installArtifact(exe);
 
-    const run_step = b.step("run", "Run the app");
+    const run_step = b.step("run_cli", "Run the cli emulator");
 
     const run_cmd = b.addRunArtifact(exe);
     run_step.dependOn(&run_cmd.step);
@@ -33,6 +33,7 @@ pub fn build(b: *std.Build) void {
     if (b.args) |args| {
         run_cmd.addArgs(args);
     }
+
 
     const mod_tests = b.addTest(.{
         .root_module = mod,
@@ -46,7 +47,7 @@ pub fn build(b: *std.Build) void {
 
     const run_exe_tests = b.addRunArtifact(exe_tests);
 
-    const test_step = b.step("test", "Run tests");
+    const test_step = b.step("test", "Run Emulator Tests");
     test_step.dependOn(&run_mod_tests.step);
     test_step.dependOn(&run_exe_tests.step);
 }
