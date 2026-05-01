@@ -5,6 +5,9 @@ const print = @import("std").debug.print;
 
 const EOF: u8 = 0x04;
 
+var threaded= std.Io.Threaded.init_single_threaded;
+var io = threaded.io();
+
 // console
 // 10 vector   18      write
 // 11 19 error
@@ -15,12 +18,12 @@ const EOF: u8 = 0x04;
 // 16 -- 1e mode
 // 17 type 1f exec
 
-fn console_dei(_: std.Io, cpu: *uxn.CPU, dev: u16, s: u1) u16 {
+fn console_dei(cpu: *uxn.CPU, dev: u16, s: u1) u16 {
     const x = cpu.fetch(dev, s);
     return x;
 }
 
-fn console_deo(io: std.Io, cpu: *uxn.CPU, dev: u16, value: u16, s: u1) void {
+fn console_deo(cpu: *uxn.CPU, dev: u16, value: u16, s: u1) void {
     switch (dev) {
         0x18 => {
             const output = [_]u8{@truncate(value)};
@@ -40,7 +43,7 @@ fn console_deo(io: std.Io, cpu: *uxn.CPU, dev: u16, value: u16, s: u1) void {
 
 
 pub fn main(init: std.process.Init) !void {
-    const io = init.io;
+    // const io = init.io;
 
     const args = try init.minimal.args.toSlice(init.arena.child_allocator);
 
@@ -98,7 +101,7 @@ pub fn main(init: std.process.Init) !void {
     }
 
     //  Reset vector.
-    cpu.eval(io, console_dei, console_deo);
+    cpu.eval(console_dei, console_deo);
     while (cpu.fetch(0x0f, 0) == 0) {
 
         var console_input: ConsoleInput =  undefined;
@@ -131,7 +134,7 @@ pub fn main(init: std.process.Init) !void {
 
         if (cpu.fetch(0x10, 0) != 0) {
             cpu.pc = cpu.fetch(0x10, 1);
-            cpu.eval(io, console_dei, console_deo);
+            cpu.eval(console_dei, console_deo);
         } else {
             break;
         }
