@@ -12,6 +12,8 @@ pub fn build(b: *std.Build) void {
 
     const exe = b.addExecutable(.{
         .name = "uxncli",
+        .use_llvm = true,
+        .use_lld = true,
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/platforms/console.zig"),
             .target = target,
@@ -41,12 +43,13 @@ pub fn build(b: *std.Build) void {
     const raylib_lib = b.dependency("raylib", .{
         .target = target,
         .optimize = optimize,
-        .platform = .glfw,
     });
     const raylib = raylib_lib.module("raylib");
 
     const exe_ray = b.addExecutable(.{
         .name = "uxnray",
+        .use_llvm = true,
+        .use_lld = true,
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/platforms/raylib.zig"),
             .target = target,
