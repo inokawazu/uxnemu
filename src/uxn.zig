@@ -302,7 +302,7 @@ fn cpu_eval(self: *CPU, dei: DEIHandler, deo: DEOHandler) void {
                         LIT2, LIT2r => {
                             const x = mword(self.ram[self.pc], self.ram[self.pc + 1]);
                             self.push(x, r, s);
-                            self.pc += 2;
+                            self.pc = @addWithOverflow(self.pc, 2)[0];
                         },
                         BRK => { 
                             return;
