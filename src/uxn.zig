@@ -152,24 +152,6 @@ pub fn jump(pc: u16, addr: u16, s: u1) u16 {
     }
 }
 
-const EvalDEI = struct {
-    addr: u16,
-    short_mode: u1,
-    return_mode: u1,
-};
-
-const EvalDEO = struct {
-    addr: u16,
-    value: u16,
-    short_mode: u1,
-};
-
-const EvalReturn = union(enum) {
-    brk,
-    deo: EvalDEO,
-    dei: EvalDEI,
-};
-
 pub const VM = struct {
     stk: [2]Stack,
     ptr: [2]u8,
@@ -252,15 +234,11 @@ pub const VM = struct {
             switch (instruction.opcode) {
                 .BRK => {
                     switch (instruction.to_u8()) {
-                        LIT, LITr, => {
-                            const x = self.fetch(pc, 0);
-                            self.push(x, r, 0);
+                        LIT, LITr, LIT2, LIT2r => {
+                            const x = self.fetch(pc, s);
+                            self.push(x, r, s);
                             pc +%= 1;
-                        },
-                        LIT2, LIT2r => {
-                            const x = self.fetch(pc, 1);
-                            self.push(x, r, 1);
-                            pc +%= 2;
+                            pc +%= s;
                         },
                         BRK => { 
                             return;
