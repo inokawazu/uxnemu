@@ -175,12 +175,6 @@ pub const VM = struct {
     ptr: [2]u8,
     ram: []u8,
 
-    // rp: u8,
-    // rs: Stack,
-    // wp: u8,
-    // ws: Stack,
-    // ram: RAM,
-
     const Self = @This();
 
     pub fn init(gpa: std.mem.Allocator) !Self {
@@ -255,21 +249,17 @@ pub const VM = struct {
 
             pc +%= 1;
 
-            // std.debug.print("stack {any}\n", .{self.stk[r][0..self.ptr[r]]});
-
             switch (instruction.opcode) {
                 .BRK => {
                     switch (instruction.to_u8()) {
                         LIT, LITr, => {
                             const x = self.fetch(pc, 0);
                             self.push(x, r, 0);
-                            // std.debug.print("LIT, LITr x = {}, s = {}, stack = {any}\n", .{x, s, self.stk[r][0..self.ptr[r]]});
                             pc +%= 1;
                         },
                         LIT2, LIT2r => {
                             const x = self.fetch(pc, 1);
                             self.push(x, r, 1);
-                            // std.debug.print("LIT2, LIT2r x = {}, s = {}, stack = {any}\n", .{x, s, self.stk[r][0..self.ptr[r]]});
                             pc +%= 2;
                         },
                         BRK => { 
