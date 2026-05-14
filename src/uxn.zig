@@ -44,6 +44,10 @@ const JCI:   u8   = 0x20;
 const JMI:   u8   = 0x40; 
 const JSI:   u8   = 0x60; 
 
+const RESET_VECTOR: u16 = 0x100;
+
+const BANKS = 0x10;
+const RAM_SIZE = BANKS * 0x10000;
 
 // Holds Instruction data
 // data lay out 'kr2ooooo'
@@ -125,11 +129,6 @@ const Instruction = packed struct {
 // TODO: make stacks circular
 const Stack = [0x100]u8;
 
-// const DeviceMemory= [0xFF + 1]u8;
-const RAM = [0x10000]u8;
-
-const START_PC: u16 = 0x100;
-
 fn mword(bu: u8, bl: u8) u16 {
     return (@as(u16, bu) << 8) | @as(u16, bl);
 }
@@ -142,6 +141,14 @@ fn rel_offset(pc: u16, offset: u8) u16 {
         return pc - rel;
     } else {
         return pc + offset;
+    }
+}
+
+pub fn jump(pc: u16, addr: u16, s: u1) u16 {
+    if (s == 1) {
+        return addr;
+    } else {
+        return rel_offset(pc, @truncate(addr));
     }
 }
 
@@ -163,99 +170,61 @@ const EvalReturn = union(enum) {
     dei: EvalDEI,
 };
 
-pub const CPU = struct {
-    rp: u8,
-    rs: Stack,
-    wp: u8,
-    ws: Stack,
-    pc: u16,
-    ram: RAM,
+pub const VM = struct {
+    stk: [2]Stack,
+    ptr: [2]u8,
+    ram: []u8,
+
+    // rp: u8,
+    // rs: Stack,
+    // wp: u8,
+    // ws: Stack,
+    // ram: RAM,
 
     const Self = @This();
 
-    pub fn init() Self {
+    pub fn init(gpa: std.mem.Allocator) !Self {
+        var _ram = try gpa.alloc(u8, RAM_SIZE);
+        for (0.._ram.len) |i| _ram[i] = 0;
+
         return .{
-            .rp = 0,
-            .rs =  std.mem.zeroes(Stack),
-            .wp = 0,
-            .ws = std.mem.zeroes(Stack),
-            .pc = START_PC,
-            .ram= std.mem.zeroes(RAM),
+            .ptr = .{0, 0},
+            .stk = .{std.mem.zeroes(Stack), std.mem.zeroes(Stack)},
+            .ram = _ram,
         };
     }
 
+    pub fn deinit(self: *Self, gpa: std.mem.Allocator) void {
+        gpa.free(self.ram);
+    }
+
     pub fn load_rom(self: *Self, program: []const u8) void {
-        for (program, START_PC..) |program_memory, ram_i| {
+        for (program, RESET_VECTOR..) |program_memory, ram_i| {
             self.ram[ram_i] = program_memory;
         }
     }
 
-    // pop working stack
-    fn popw(self: *Self, k: u1, s: u1) u16 {
-        var out: u16 = self.ws[self.wp - 1];
+    pub fn pop(self: *Self, k: u1, r: u1, s: u1) u16 {
+        if (self.ptr[r] <= s) { return 0; }
+        var out: u16 = self.stk[r][self.ptr[r] - 1];
         if (s == 1) {
-            out |= @as(u16, self.ws[self.wp - 2]) << 8;
+            out |= @as(u16, self.stk[r][self.ptr[r] - 2]) << 8;
         }
-        if (k != 1) self.wp -= 1 + @as(u8, s);
+        if (k != 1) self.ptr[r] -= 1 + @as(u8, s);
         return out;
     }
 
-    // push working stack
-    fn pushw(self: *Self, value: u16, s: u1) void {
+    pub fn push(self: *Self, x: u16, r: u1, s: u1) void {
         if (s==1) {
-            self.ws[self.wp] = @truncate((value >> 8) & 0xFF);
-            self.wp += 1;
+            self.stk[r][self.ptr[r]] = @truncate((x >> 8) & 0xFF);
+            self.ptr[r] += 1;
         }
-        self.ws[self.wp] = @truncate(value & 0xFF);
-        self.wp += 1;
+        self.stk[r][self.ptr[r]] = @truncate(x & 0xFF);
+        self.ptr[r] += 1;
     }
 
     fn peekw(self: Self) u8 {
-        return self.ws[self.wp - 1];
-    }
-
-    // pop return stack
-    fn popr(self: *Self, k: u1, s: u1) u16 {
-        var out: u16 = self.rs[self.rp - 1];
-        if (s == 1) {
-            out |= @as(u16, self.rs[self.rp - 2]) << 8;
-        }
-        if (k != 1) self.rp -= 1 + @as(u8, s);
-        return out;
-    }
-
-    // push return stack
-    fn pushr(self: *Self, value: u16, s: u1) void {
-        if (s==1) {
-            self.rs[self.rp] = @truncate((value >> 8) & 0xFF);
-            self.rp += 1;
-        }
-        self.rs[self.rp] = @truncate(value & 0xFF);
-        self.rp += 1;
-    }
-
-    pub fn pop(self: *Self, k: u1, r: u1, s: u1) u16 {
-        if (r == 1) {
-            return self.popr(k, s);
-        } else {
-            return self.popw(k, s);
-        }
-    }
-
-    pub fn push(self: *Self, value: u16, r: u1, s: u1) void {
-        if (r == 1) {
-            self.pushr(value, s);
-        } else {
-            self.pushw(value, s);
-        }
-    }
-
-    pub fn jump(self: *Self, addr: u16, s: u1) void {
-        if (s == 1) {
-            self.pc = addr;
-        } else {
-            self.pc = rel_offset(self.pc, @truncate(addr));
-        }
+        return self.stk[0][self.ptr[0] - 1];
     }
 
     pub fn fetch(self: *Self, addr: u16, s: u1) u16 {
@@ -275,34 +244,33 @@ pub const CPU = struct {
         }
     }
 
-    pub const eval = cpu_eval;
-};
+    pub fn eval(self: *Self, program_counter: u16, dei: DEIHandler, deo: DEOHandler) void {
+        var pc = program_counter;
 
-pub const DEIHandler = fn (self: *CPU, addr: u16, s: u1) u16;
-pub const DEOHandler = fn (self: *CPU, addr: u16, x: u16, s: u1) void;
-
-fn cpu_eval(self: *CPU, dei: DEIHandler, deo: DEOHandler) void {
         while (true) {
-            const next_inst = Instruction.from_u8(self.ram[self.pc]);
+            const instruction = Instruction.from_u8(self.ram[pc]);
+            const r = instruction.return_mode;
+            const s = instruction.short_mode;
+            const k = instruction.keep_mode;
 
-            // std.debug.print("{f} (pc = 0x{X:0>4})\n", .{next_inst, self.pc});
-            self.pc += 1;
+            pc +%= 1;
 
-            const k = next_inst.keep_mode;
-            const r = next_inst.return_mode;
-            const s = next_inst.short_mode;
+            // std.debug.print("stack {any}\n", .{self.stk[r][0..self.ptr[r]]});
 
-            switch (next_inst.opcode) {
+            switch (instruction.opcode) {
                 .BRK => {
-                    switch (next_inst.to_u8()) {
-                        LIT, LITr => {
-                            self.push(self.ram[self.pc], r, s);
-                            self.pc += 1;
+                    switch (instruction.to_u8()) {
+                        LIT, LITr, => {
+                            const x = self.fetch(pc, 0);
+                            self.push(x, r, 0);
+                            // std.debug.print("LIT, LITr x = {}, s = {}, stack = {any}\n", .{x, s, self.stk[r][0..self.ptr[r]]});
+                            pc +%= 1;
                         },
                         LIT2, LIT2r => {
-                            const x = mword(self.ram[self.pc], self.ram[self.pc + 1]);
-                            self.push(x, r, s);
-                            self.pc = @addWithOverflow(self.pc, 2)[0];
+                            const x = self.fetch(pc, 1);
+                            self.push(x, r, 1);
+                            // std.debug.print("LIT2, LIT2r x = {}, s = {}, stack = {any}\n", .{x, s, self.stk[r][0..self.ptr[r]]});
+                            pc +%= 2;
                         },
                         BRK => { 
                             return;
@@ -311,21 +279,21 @@ fn cpu_eval(self: *CPU, dei: DEIHandler, deo: DEOHandler) void {
                             // TODO: test JCI
                             const b= self.pop(k, r, 0);
                             if (b != 0) {
-                                const x = self.fetch(self.pc, 1);
-                                self.pc = @addWithOverflow(self.pc, x)[0];
+                                const x = self.fetch(pc, 1);
+                                pc +%= x;
                             }
-                            self.pc = @addWithOverflow(self.pc, 2)[0];
+                            pc +%= 2;
                         },
                         JMI => {
-                            const x = self.fetch(self.pc, 1);
-                            self.pc = @addWithOverflow(self.pc, x)[0];
-                            self.pc = @addWithOverflow(self.pc, 2)[0];
+                            const x = self.fetch(pc, 1);
+                            pc +%= x;
+                            pc +%= 2;
                         },
                         JSI => {
-                            const rel = self.fetch(self.pc, 1);
-                            self.push(self.pc + 2, 1, 1);
-                            self.pc = @addWithOverflow(self.pc, rel)[0];
-                            self.pc = @addWithOverflow(self.pc, 2)[0];
+                            const rel = self.fetch(pc, 1);
+                            self.push(pc + 2, 1, 1);
+                            pc +%= rel;
+                            pc +%= 2;
                         },
                         else => { unreachable; },
                     }
@@ -397,19 +365,19 @@ fn cpu_eval(self: *CPU, dei: DEIHandler, deo: DEOHandler) void {
                 .JMP => {
                     //TODO: test JMP
                     const x = self.pop(k, r, s);
-                    self.jump(x, s);
+                    pc = jump(pc, x, s);
                 },
                 .JCN => {
                     //TODO: test JCN
                     const x = self.pop(k, r, s);
                     const b = self.pop(k, r, 0);
-                    if ( b != 0 ) self.jump(x, s);
+                    if ( b != 0 ) pc = jump(pc, x, s);
                 },
                 .JSR => {
                     //TODO: test JSR
                     const x = self.pop(k, r, s);
-                    self.push(self.pc, r ^ 1, 1);
-                    self.jump(x, s);
+                    self.push(pc, r ^ 1, 1);
+                    pc = jump(pc, x, s);
                 },
                 .STH => {
                     //TODO: test STH
@@ -431,7 +399,7 @@ fn cpu_eval(self: *CPU, dei: DEIHandler, deo: DEOHandler) void {
                 .LDR => {
                     //TODO: test LDR
                     const rel = self.pop(k, r, 0);
-                    const addr = rel_offset(self.pc, @truncate(rel));
+                    const addr = rel_offset(pc, @truncate(rel));
                     const x = self.fetch(addr, s);
                     self.push(x, r, s);
                 },
@@ -439,7 +407,7 @@ fn cpu_eval(self: *CPU, dei: DEIHandler, deo: DEOHandler) void {
                     //TODO: test STR
                     const rel = self.pop(k, r, 0);
                     const x = self.pop(k, r, s);
-                    const addr = rel_offset(self.pc, @truncate(rel));
+                    const addr = rel_offset(pc, @truncate(rel));
                     self.store(x, addr, s);
                 },
                 .LDA => {
@@ -457,14 +425,14 @@ fn cpu_eval(self: *CPU, dei: DEIHandler, deo: DEOHandler) void {
                 .DEI => {
                     //TODO: test DEI and implement
                     const dev = self.pop(k, r, 0);
-                    const x = dei(self, dev, s);
+                    const x = dei(self, @truncate(dev), s);
                     self.push(x, r, s);
                 },
                 .DEO => {
                     //TODO: test DEO and implement
                     const dev = self.pop(k, r, 0);
                     const x = self.pop(k, r, s);
-                    deo(self, dev, x, s);
+                    deo(self, @truncate(dev), x, s);
                 },
                 .ADD => {
                     const y = self.pop(k, r, s);
@@ -510,21 +478,21 @@ fn cpu_eval(self: *CPU, dei: DEIHandler, deo: DEOHandler) void {
                     self.push((x >> rn) << ln, r, s);
                 },
             }
-        }       
+        }
+
+
     }
+};
+
+pub const DEIHandler = fn (self: *VM, addr: u8, s: u1) u16;
+pub const DEOHandler = fn (self: *VM, addr: u8, x: u16, s: u1) void;
 
 
-
-fn dummy_dei(_: *CPU, _: u16, _: u1) u16 {
+fn dummy_dei(_: *VM, _: u8, _: u1) u16 {
     return 0;
 }
 
-fn dummy_deo(_: *CPU, _: u16, _: u16, _: u1) void {
-}
-
-fn dummy_io() std.Io {
-    var threaded = std.Io.Threaded.init_single_threaded;
-    return threaded.io();
+fn dummy_deo(_: *VM, _: u8, _: u16, _: u1) void {
 }
 
 test "SWP" {
@@ -542,11 +510,12 @@ test "SWP" {
         BRK,
     };
 
-    var cpu = CPU.init();
-    cpu.load_rom(&test_program);
-    _ = cpu.eval(dummy_dei, dummy_deo);
-    try std.testing.expectEqualSlices(u8, &[_]u8{0x78, 0x56, 0x12, 0x34}, cpu.ws[0..4]);
-    try std.testing.expectEqual(4, cpu.wp);
+    var vm = try VM.init(std.testing.allocator);
+    defer vm.deinit(std.testing.allocator);
+    vm.load_rom(&test_program);
+    vm.eval(RESET_VECTOR, dummy_dei, dummy_deo);
+    try std.testing.expectEqualSlices(u8, &[_]u8{0x78, 0x56, 0x12, 0x34}, vm.stk[0][0..4]);
+    try std.testing.expectEqual(4, vm.ptr[0]);
 }
 
 test "NIP" {
@@ -559,12 +528,13 @@ test "NIP" {
         0x00,
     };
 
-    var cpu = CPU.init();
-    cpu.load_rom(&test_program);
-    _ = cpu.eval(dummy_dei, dummy_deo);
+    var vm = try VM.init(std.testing.allocator);
+    defer vm.deinit(std.testing.allocator);
+    vm.load_rom(&test_program);
+    vm.eval(RESET_VECTOR, dummy_dei, dummy_deo);
 
-    try std.testing.expectEqual(1, cpu.wp);
-    try std.testing.expectEqual(cpu.peekw(), 0x34);
+    try std.testing.expectEqual(1, vm.ptr[0]);
+    try std.testing.expectEqual(vm.peekw(), 0x34);
 }
 
 test "test LIT2 and POP2" {
@@ -579,22 +549,23 @@ test "test LIT2 and POP2" {
         0x00,
     };
 
-    var cpu = CPU.init();
-    cpu.load_rom(&test_program);
-    _ = cpu.eval(dummy_dei, dummy_deo);
+    var vm = try VM.init(std.testing.allocator);
+    defer vm.deinit(std.testing.allocator);
+    vm.load_rom(&test_program);
+    vm.eval(RESET_VECTOR, dummy_dei, dummy_deo);
 
-    // try std.testing.expectEqual(5, cpu.peekw());
-    try std.testing.expectEqual(4, cpu.wp);
+    // try std.testing.expectEqual(5, vm.peekw());
+    try std.testing.expectEqual(4, vm.ptr[0]);
 
     const expected_ws = &[4]u8{0x12, 0x34, 0x56, 0x78};
-    try std.testing.expectEqualSlices(u8, expected_ws, cpu.ws[0..4]);
+    try std.testing.expectEqualSlices(u8, expected_ws, vm.stk[0][0..4]);
 
-    try std.testing.expectEqual(0x5678, cpu.popw(1, 1));
-    try std.testing.expectEqual(0x5678, cpu.popw(0, 1));
+    try std.testing.expectEqual(0x5678, vm.pop(1, 0, 1));
+    try std.testing.expectEqual(0x5678, vm.pop(0, 0, 1));
 
-    try std.testing.expectEqual(0x34, cpu.popw(1, 0));
-    try std.testing.expectEqual(0x1234, cpu.popw(1, 1));
-    try std.testing.expectEqual(0x1234, cpu.popw(0, 1));
+    try std.testing.expectEqual(0x34, vm.pop(1, 0, 0));
+    try std.testing.expectEqual(0x1234, vm.pop(1, 0, 1));
+    try std.testing.expectEqual(0x1234, vm.pop(0, 0, 1));
 }
 
 
@@ -609,12 +580,15 @@ test "ROT" {
         rot.to_u8(),
         BRK,
     };
-    var cpu = CPU.init();
-    cpu.load_rom(&test_program);
-    _ = cpu.eval(dummy_dei, dummy_deo);
+    var vm = try VM.init(std.testing.allocator);
+    defer vm.deinit(std.testing.allocator);
+    vm.load_rom(&test_program);
+    vm.eval(RESET_VECTOR, dummy_dei, dummy_deo);
 
-    try std.testing.expectEqual(3, cpu.wp);
-    try std.testing.expectEqualSlices(u8, &[_]u8{2, 3, 1,}, cpu.ws[0..cpu.wp]);
+    try std.testing.expectEqual(3, vm.ptr[0]);
+    try std.testing.expectEqualSlices(u8, 
+        &[_]u8{2, 3, 1,}, vm.stk[0][0..vm.ptr[0]]
+    );
 }
 
 test "DUP" {
@@ -629,13 +603,14 @@ test "DUP" {
         dupk.to_u8(),
         BRK,
     };
-    var cpu = CPU.init();
-    cpu.load_rom(&test_program);
-    _ = cpu.eval(dummy_dei, dummy_deo);
+    var vm = try VM.init(std.testing.allocator);
+    defer vm.deinit(std.testing.allocator);
+    vm.load_rom(&test_program);
+    vm.eval(RESET_VECTOR, dummy_dei, dummy_deo);
 
-    try std.testing.expectEqual(6, cpu.wp);
+    try std.testing.expectEqual(6, vm.ptr[0]);
     const expected_ws = [_]u8{1} ** 6;
-    try std.testing.expectEqualSlices(u8, &expected_ws, cpu.ws[0..cpu.wp]);
+    try std.testing.expectEqualSlices(u8, &expected_ws, vm.stk[0][0..vm.ptr[0]]);
 }
 
 test "test program INC five times, starting from 0x00" {
@@ -649,12 +624,13 @@ test "test program INC five times, starting from 0x00" {
         BRK,
     };
 
-    var cpu = CPU.init();
-    cpu.load_rom(&test_program);
-    _ = cpu.eval(dummy_dei, dummy_deo);
+    var vm = try VM.init(std.testing.allocator);
+    defer vm.deinit(std.testing.allocator);
+    vm.load_rom(&test_program);
+    vm.eval(RESET_VECTOR, dummy_dei, dummy_deo);
 
-    try std.testing.expectEqual(5, cpu.peekw());
-    try std.testing.expectEqual(1, cpu.wp);
+    try std.testing.expectEqual(5, vm.peekw());
+    try std.testing.expectEqual(1, vm.ptr[0]);
 }
 
 test "test program to find 1 + 2 = 3" {
@@ -670,26 +646,27 @@ test "test program to find 1 + 2 = 3" {
         BRK,
     };
 
-    var cpu = CPU.init();
-    cpu.load_rom(&test_program);
-    cpu.eval(dummy_dei, dummy_deo);
+    var vm = try VM.init(std.testing.allocator);
+    defer vm.deinit(std.testing.allocator);
+    vm.load_rom(&test_program);
+    vm.eval(RESET_VECTOR, dummy_dei, dummy_deo);
 
-    // try std.testing.expectEqual(.brk, eval_value);
-    try std.testing.expectEqual(3, cpu.peekw());
-    try std.testing.expectEqual(1, cpu.wp);
+    try std.testing.expectEqual(3, vm.peekw());
+    try std.testing.expectEqual(1, vm.ptr[0]);
 }
 
 test "init CPU" {
-    const cpu = CPU.init();
+    var vm = try VM.init(std.testing.allocator);
+    defer vm.deinit(std.testing.allocator);
     var not_okay = false;
 
-    for (cpu.ram) |memory| {not_okay |= memory != 0;}
+    for (vm.ram) |memory| {not_okay |= memory != 0;}
     try std.testing.expect(!not_okay);
 
-    for (cpu.rs) |memory| {not_okay |= memory != 0;}
+    for (vm.stk[1]) |memory| {not_okay |= memory != 0;}
     try std.testing.expect(!not_okay);
 
-    for (cpu.ws) |memory| {not_okay |= memory != 0;}
+    for (vm.stk[0]) |memory| {not_okay |= memory != 0;}
     try std.testing.expect(!not_okay);
 }
 
@@ -729,25 +706,26 @@ test "check 0xb8 = JMPrk" {
 }
 
 test "mem fetching" {
-    var cpu = CPU.init();
+    var vm = try VM.init(std.testing.allocator);
+    defer vm.deinit(std.testing.allocator);
     const values = [_]u8{1,2,3,4,5};
     for (values) |value| {
-        cpu.store(value, 0x00 + value, 0);
+        vm.store(value, 0x00 + value, 0);
     }
 
     for (values) |value| {
-        const fetched = cpu.fetch(0x00 + value, 0);
+        const fetched = vm.fetch(0x00 + value, 0);
         try std.testing.expectEqual(value, fetched);
     }
 
-    @memset(&cpu.ram, 0);
+    @memset(vm.ram, 0);
 
     for (values) |value| {
-        cpu.store(value, 0x00 + 2*value, 1);
+        vm.store(value, 0x00 + 2*value, 1);
     }
 
     for (values) |value| {
-        const fetched = cpu.fetch(0x00 + 2*value + 1, 0);
+        const fetched = vm.fetch(0x00 + 2*value + 1, 0);
         try std.testing.expectEqual(value, fetched);
     }
 }
