@@ -69,7 +69,7 @@ const Instruction = packed struct {
         return @bitCast(self);
     }
 
-    pub fn format(self: Instruction, writer: *std.io.Writer) !void {
+    pub fn format(self: Instruction, writer: *std.Io.Writer) !void {
         switch (self.opcode) {
             .BRK => {
                 switch (self.to_u8()) {
@@ -220,14 +220,16 @@ pub const VM = struct {
         }
     }
 
-    pub fn eval(self: *Self, program_counter: u16, dei: DEIHandler, deo: DEOHandler) void {
-        var pc = program_counter;
+    pub fn eval(vm: *Self, vector_address: u16, deio: Device) void {
+        var pc = vector_address;
 
         while (true) {
-            const instruction = Instruction.from_u8(self.ram[pc]);
+            const instruction = Instruction.from_u8(vm.ram[pc]);
             const r = instruction.return_mode;
             const s = instruction.short_mode;
             const k = instruction.keep_mode;
+
+            // std.debug.print("pc = 0x{X:0>4}, doing {f}\n", .{pc, instruction});
 
             pc +%= 1;
 
@@ -235,8 +237,8 @@ pub const VM = struct {
                 .BRK => {
                     switch (instruction.to_u8()) {
                         LIT, LITr, LIT2, LIT2r => {
-                            const x = self.fetch(pc, s);
-                            self.push(x, r, s);
+                            const x = vm.fetch(pc, s);
+                            vm.push(x, r, s);
                             pc +%= 1;
                             pc +%= s;
                         },
@@ -245,21 +247,21 @@ pub const VM = struct {
                         },
                         JCI => {
                             // TODO: test JCI
-                            const b= self.pop(k, r, 0);
+                            const b= vm.pop(k, r, 0);
                             if (b != 0) {
-                                const x = self.fetch(pc, 1);
+                                const x = vm.fetch(pc, 1);
                                 pc +%= x;
                             }
                             pc +%= 2;
                         },
                         JMI => {
-                            const x = self.fetch(pc, 1);
+                            const x = vm.fetch(pc, 1);
                             pc +%= x;
                             pc +%= 2;
                         },
                         JSI => {
-                            const rel = self.fetch(pc, 1);
-                            self.push(pc + 2, 1, 1);
+                            const rel = vm.fetch(pc, 1);
+                            vm.push(pc + 2, 1, 1);
                             pc +%= rel;
                             pc +%= 2;
                         },
@@ -267,183 +269,183 @@ pub const VM = struct {
                     }
                 },
                 .INC => {
-                    const y = self.pop(k, r, s);
-                    self.push(y + 1, r, s);
+                    const y = vm.pop(k, r, s);
+                    vm.push(y + 1, r, s);
                 },
                 .POP => {
-                    _ = self.pop(k, r, s);
+                    _ = vm.pop(k, r, s);
                 },
                 .NIP => {
-                    const y = self.pop(k, r, s);
-                    _ = self.pop(k, r, s);
-                    self.push(y, r, s);
+                    const y = vm.pop(k, r, s);
+                    _ = vm.pop(k, r, s);
+                    vm.push(y, r, s);
                 },
                 .SWP => {
-                    const y = self.pop(k, r, s);
-                    const x = self.pop(k, r, s);
-                    self.push(y, r, s);
-                    self.push(x, r, s);
+                    const y = vm.pop(k, r, s);
+                    const x = vm.pop(k, r, s);
+                    vm.push(y, r, s);
+                    vm.push(x, r, s);
                 },
                 .ROT => { 
                     // x y z -> y z x
-                    const z = self.pop(k, r, s);
-                    const y = self.pop(k, r, s);
-                    const x = self.pop(k, r, s);
-                    self.push(y, r, s); // y
-                    self.push(z, r, s); // y z
-                    self.push(x, r, s); // y z x
+                    const z = vm.pop(k, r, s);
+                    const y = vm.pop(k, r, s);
+                    const x = vm.pop(k, r, s);
+                    vm.push(y, r, s); // y
+                    vm.push(z, r, s); // y z
+                    vm.push(x, r, s); // y z x
                 },
                 .DUP => {
-                    const x = self.pop(k, r, s);
-                    self.push(x, r, s);
-                    self.push(x, r, s);
+                    const x = vm.pop(k, r, s);
+                    vm.push(x, r, s);
+                    vm.push(x, r, s);
                 },
                 .OVR => {
                     // TODO: test OVR
-                    const y = self.pop(k,r, s);
-                    const x = self.pop(k,r, s);
-                    self.push(x, r, s);
-                    self.push(y, r, s);
-                    self.push(x, r, s);
+                    const y = vm.pop(k,r, s);
+                    const x = vm.pop(k,r, s);
+                    vm.push(x, r, s);
+                    vm.push(y, r, s);
+                    vm.push(x, r, s);
                 },
                 .EQU => {
                     // TODO: test EQU
-                    const y = self.pop(k, r, s);
-                    const x = self.pop(k, r, s);
-                    self.push(if (x == y) 1 else 0, r, 0);
+                    const y = vm.pop(k, r, s);
+                    const x = vm.pop(k, r, s);
+                    vm.push(if (x == y) 1 else 0, r, 0);
                 },
                 .NEQ => {
                     // TODO: test NEQ
-                    const y = self.pop(k, r, s);
-                    const x = self.pop(k, r, s);
-                    self.push(if (x != y) 1 else 0, r, 0);
+                    const y = vm.pop(k, r, s);
+                    const x = vm.pop(k, r, s);
+                    vm.push(if (x != y) 1 else 0, r, 0);
                 },
                 .GTH => {
                     // TODO: test GTH
-                    const y = self.pop(k, r, s);
-                    const x = self.pop(k, r, s);
-                    self.push(if (x > y) 1 else 0, r, 0);
+                    const y = vm.pop(k, r, s);
+                    const x = vm.pop(k, r, s);
+                    vm.push(if (x > y) 1 else 0, r, 0);
                 },
                 .LTH => {
                     // TODO: test LTH
-                    const y = self.pop(k, r, s);
-                    const x = self.pop(k, r, s);
-                    self.push(if (x < y) 1 else 0, r, 0);
+                    const y = vm.pop(k, r, s);
+                    const x = vm.pop(k, r, s);
+                    vm.push(if (x < y) 1 else 0, r, 0);
                 },
                 .JMP => {
                     //TODO: test JMP
-                    const x = self.pop(k, r, s);
+                    const x = vm.pop(k, r, s);
                     pc = jump(pc, x, s);
                 },
                 .JCN => {
                     //TODO: test JCN
-                    const x = self.pop(k, r, s);
-                    const b = self.pop(k, r, 0);
+                    const x = vm.pop(k, r, s);
+                    const b = vm.pop(k, r, 0);
                     if ( b != 0 ) pc = jump(pc, x, s);
                 },
                 .JSR => {
                     //TODO: test JSR
-                    const x = self.pop(k, r, s);
-                    self.push(pc, r ^ 1, 1);
+                    const x = vm.pop(k, r, s);
+                    vm.push(pc, r ^ 1, 1);
                     pc = jump(pc, x, s);
                 },
                 .STH => {
                     //TODO: test STH
-                    const x = self.pop(k, r, s);
-                    self.push(x, r ^ 1, s);
+                    const x = vm.pop(k, r, s);
+                    vm.push(x, r ^ 1, s);
                 },
                 .LDZ => {
                     //TODO: test LDZ
-                    const zp = self.pop(k, r, 0);
-                    const x = self.fetch(zp, s);
-                    self.push(x, r, s);
+                    const zp = vm.pop(k, r, 0);
+                    const x = vm.fetch(zp, s);
+                    vm.push(x, r, s);
                 },
                 .STZ => {
                     //TODO: test STZ
-                    const zp = self.pop(k, r, 0);
-                    const x = self.pop(k, r, s);
-                    self.store(x, zp, s);
+                    const zp = vm.pop(k, r, 0);
+                    const x = vm.pop(k, r, s);
+                    vm.store(x, zp, s);
                 },
                 .LDR => {
                     //TODO: test LDR
-                    const rel = self.pop(k, r, 0);
+                    const rel = vm.pop(k, r, 0);
                     const addr = rel_offset(pc, @truncate(rel));
-                    const x = self.fetch(addr, s);
-                    self.push(x, r, s);
+                    const x = vm.fetch(addr, s);
+                    vm.push(x, r, s);
                 },
                 .STR => {
                     //TODO: test STR
-                    const rel = self.pop(k, r, 0);
-                    const x = self.pop(k, r, s);
+                    const rel = vm.pop(k, r, 0);
+                    const x = vm.pop(k, r, s);
                     const addr = rel_offset(pc, @truncate(rel));
-                    self.store(x, addr, s);
+                    vm.store(x, addr, s);
                 },
                 .LDA => {
                     //TODO: test LDA
-                    const addr = self.pop(k, r, 1);
-                    const x = self.fetch(addr, s);
-                    self.push(x, r, s);
+                    const addr = vm.pop(k, r, 1);
+                    const x = vm.fetch(addr, s);
+                    vm.push(x, r, s);
                 },
                 .STA => {
                     //TODO: test STA
-                    const addr = self.pop(k, r, 1);
-                    const x = self.pop(k, r, s);
-                    self.store(x, addr, s);
+                    const addr = vm.pop(k, r, 1);
+                    const x = vm.pop(k, r, s);
+                    vm.store(x, addr, s);
                 },
                 .DEI => {
                     //TODO: test DEI and implement
-                    const dev = self.pop(k, r, 0);
-                    const x = dei(self, @truncate(dev), s);
-                    self.push(x, r, s);
+                    const dev = vm.pop(k, r, 0);
+                    const x = deio.dei(vm, @truncate(dev), s);
+                    vm.push(x, r, s);
                 },
                 .DEO => {
                     //TODO: test DEO and implement
-                    const dev = self.pop(k, r, 0);
-                    const x = self.pop(k, r, s);
-                    deo(self, @truncate(dev), x, s);
+                    const dev = vm.pop(k, r, 0);
+                    const x = vm.pop(k, r, s);
+                    deio.deo(vm, @truncate(dev), x, s);
                 },
                 .ADD => {
-                    const y = self.pop(k, r, s);
-                    const x = self.pop(k, r, s);
-                    self.push(y + x, r, s);
+                    const y = vm.pop(k, r, s);
+                    const x = vm.pop(k, r, s);
+                    vm.push(y + x, r, s);
                 },
                 .SUB => {
-                    const y = self.pop(k, r, s);
-                    const x = self.pop(k, r, s);
-                    self.push(x - y, r, s);
+                    const y = vm.pop(k, r, s);
+                    const x = vm.pop(k, r, s);
+                    vm.push(x - y, r, s);
                 },
                 .MUL => {
-                    const y = self.pop(k, r, s);
-                    const x = self.pop(k, r, s);
-                    self.push(x * y, r, s);
+                    const y = vm.pop(k, r, s);
+                    const x = vm.pop(k, r, s);
+                    vm.push(x * y, r, s);
                 },
                 .DIV => {
-                    const y = self.pop(k, r, s);
-                    const x = self.pop(k, r, s);
-                    self.push(if (y==0) 0 else x/y, r, s);
+                    const y = vm.pop(k, r, s);
+                    const x = vm.pop(k, r, s);
+                    vm.push(if (y==0) 0 else x/y, r, s);
                 },
                 .AND => {
-                    const y = self.pop(k, r, s);
-                    const x = self.pop(k, r, s);
-                    self.push(x & y, r, s);
+                    const y = vm.pop(k, r, s);
+                    const x = vm.pop(k, r, s);
+                    vm.push(x & y, r, s);
                 },
                 .ORA => {
-                    const y = self.pop(k, r, s);
-                    const x = self.pop(k, r, s);
-                    self.push(x | y, r, s);
+                    const y = vm.pop(k, r, s);
+                    const x = vm.pop(k, r, s);
+                    vm.push(x | y, r, s);
                 },
                 .EOR => {
-                    const y = self.pop(k, r, s);
-                    const x = self.pop(k, r, s);
-                    self.push(x ^ y, r, s);
+                    const y = vm.pop(k, r, s);
+                    const x = vm.pop(k, r, s);
+                    vm.push(x ^ y, r, s);
                 },
                 .SFT => {
                     // TODO: test SFT
-                    const lr: u8 = @truncate(self.pop(k, r, 0));
+                    const lr: u8 = @truncate(vm.pop(k, r, 0));
                     const ln: u4 = @truncate(lr >> 4);
                     const rn: u4 = @truncate(lr);
-                    const x = self.pop(k, r, s);
-                    self.push((x >> rn) << ln, r, s);
+                    const x = vm.pop(k, r, s);
+                    vm.push((x >> rn) << ln, r, s);
                 },
             }
         }
@@ -452,16 +454,52 @@ pub const VM = struct {
     }
 };
 
-pub const DEIHandler = fn (self: *VM, addr: u8, s: u1) u16;
-pub const DEOHandler = fn (self: *VM, addr: u8, x: u16, s: u1) void;
+pub const Device= struct {
+    const Self = @This();
 
+    ptr:    *anyopaque,
+    vtable: *const VTable,
 
-fn dummy_dei(_: *VM, _: u8, _: u1) u16 {
-    return 0;
-}
+    pub const VTable = struct {
+        dei: *const fn (ctx: *anyopaque, vm: *VM, addr: u8, s: u1) u16,
+        deo: *const fn (ctx: *anyopaque, vm: *VM, addr: u8, x: u16, s: u1) void,
+    };
 
-fn dummy_deo(_: *VM, _: u8, _: u16, _: u1) void {
-}
+    pub fn init(ptr: anytype) Self {
+        const gen = struct {
+            const T = @TypeOf(ptr);
+            fn deiFn(ctx: *anyopaque, vm: *VM, addr: u8, s: u1) u16 {
+                const self: T = @ptrCast(@alignCast(ctx));
+                return self.dei(vm, addr, s);
+            }
+            fn deoFn(ctx: *anyopaque, vm: *VM, addr: u8, x: u16, s: u1) void {
+                const self: T = @ptrCast(@alignCast(ctx));
+                return self.deo(vm, addr, x, s);
+            }
+            const vtable = VTable{ 
+                .dei = deiFn,
+                .deo = deoFn 
+            };
+        };
+        return .{ .ptr = ptr, .vtable = &gen.vtable };
+    }
+
+    /// Read port — returns value on the bus.
+    pub inline fn dei(self: Self, vm: *VM, addr: u8, s: u1) u16 {
+        return self.vtable.dei(self.ptr, vm, addr, s);
+    }
+
+    /// Write port.
+    pub inline fn deo(self: Self, vm: *VM, addr: u8, x: u16, s: u1) void {
+        self.vtable.deo(self.ptr, vm, addr, x, s);
+    }
+};
+
+const DummyDevice = struct {
+    pub fn dei(_: *@This(), _: *VM, _: u8, _: u1) u16 { return 0; }
+    pub fn deo(_: *@This(), _: *VM, _: u8, _: u16, _: u1) void {}
+};
+
 
 test "SWP" {
     const swp: Instruction = .{.opcode = .SWP};
@@ -481,7 +519,8 @@ test "SWP" {
     var vm = try VM.init(std.testing.allocator);
     defer vm.deinit(std.testing.allocator);
     vm.load_rom(&test_program);
-    vm.eval(RESET_VECTOR, dummy_dei, dummy_deo);
+    var dd: DummyDevice = .{};
+    vm.eval(RESET_VECTOR, Device.init(&dd));
     try std.testing.expectEqualSlices(u8, &[_]u8{0x78, 0x56, 0x12, 0x34}, vm.stk[0][0..4]);
     try std.testing.expectEqual(4, vm.ptr[0]);
 }
@@ -499,7 +538,8 @@ test "NIP" {
     var vm = try VM.init(std.testing.allocator);
     defer vm.deinit(std.testing.allocator);
     vm.load_rom(&test_program);
-    vm.eval(RESET_VECTOR, dummy_dei, dummy_deo);
+    var dev: DummyDevice = .{};
+    vm.eval(RESET_VECTOR, Device.init(&dev));
 
     try std.testing.expectEqual(1, vm.ptr[0]);
     try std.testing.expectEqual(vm.peekw(), 0x34);
@@ -520,7 +560,8 @@ test "test LIT2 and POP2" {
     var vm = try VM.init(std.testing.allocator);
     defer vm.deinit(std.testing.allocator);
     vm.load_rom(&test_program);
-    vm.eval(RESET_VECTOR, dummy_dei, dummy_deo);
+    var dd: DummyDevice = .{};
+    vm.eval(RESET_VECTOR, Device.init(&dd));
 
     // try std.testing.expectEqual(5, vm.peekw());
     try std.testing.expectEqual(4, vm.ptr[0]);
@@ -551,7 +592,8 @@ test "ROT" {
     var vm = try VM.init(std.testing.allocator);
     defer vm.deinit(std.testing.allocator);
     vm.load_rom(&test_program);
-    vm.eval(RESET_VECTOR, dummy_dei, dummy_deo);
+    var dd: DummyDevice = .{};
+    vm.eval(RESET_VECTOR, Device.init(&dd));
 
     try std.testing.expectEqual(3, vm.ptr[0]);
     try std.testing.expectEqualSlices(u8, 
@@ -574,7 +616,8 @@ test "DUP" {
     var vm = try VM.init(std.testing.allocator);
     defer vm.deinit(std.testing.allocator);
     vm.load_rom(&test_program);
-    vm.eval(RESET_VECTOR, dummy_dei, dummy_deo);
+    var dd: DummyDevice = .{};
+    vm.eval(RESET_VECTOR, Device.init(&dd));
 
     try std.testing.expectEqual(6, vm.ptr[0]);
     const expected_ws = [_]u8{1} ** 6;
@@ -595,7 +638,8 @@ test "test program INC five times, starting from 0x00" {
     var vm = try VM.init(std.testing.allocator);
     defer vm.deinit(std.testing.allocator);
     vm.load_rom(&test_program);
-    vm.eval(RESET_VECTOR, dummy_dei, dummy_deo);
+    var dd: DummyDevice = .{};
+    vm.eval(RESET_VECTOR, Device.init(&dd));
 
     try std.testing.expectEqual(5, vm.peekw());
     try std.testing.expectEqual(1, vm.ptr[0]);
@@ -617,7 +661,8 @@ test "test program to find 1 + 2 = 3" {
     var vm = try VM.init(std.testing.allocator);
     defer vm.deinit(std.testing.allocator);
     vm.load_rom(&test_program);
-    vm.eval(RESET_VECTOR, dummy_dei, dummy_deo);
+    var dd: DummyDevice = .{};
+    vm.eval(RESET_VECTOR, Device.init(&dd));
 
     try std.testing.expectEqual(3, vm.peekw());
     try std.testing.expectEqual(1, vm.ptr[0]);
