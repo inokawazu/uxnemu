@@ -4,16 +4,22 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+
+
     const uxn = b.addModule("uxn", .{
         .root_source_file = b.path("src/uxn.zig"),
         .target = target,
     });
 
+    const devices = b.addModule("devices", .{
+        .root_source_file = b.path("src/devices/devices.zig"),
+        .target = target,
+            .imports = &.{
+                .{ .name = "uxn", .module = uxn },
+            },
+    });
 
-    // const uxn2 = b.addModule("uxn", .{
-    //     .root_source_file = b.path("src/uxn2.zig"),
-    //     .target = target,
-    // });
+
 
     const exe = b.addExecutable(.{
         .name = "uxncli",
@@ -23,9 +29,13 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .imports = &.{
                 .{ .name = "uxn", .module = uxn },
+                .{ .name = "devices", .module = devices },
             },
         }),
     });
+
+
+
 
     b.installArtifact(exe);
 
@@ -47,16 +57,15 @@ pub fn build(b: *std.Build) void {
     const uxn_tests = b.addTest(.{
         .root_module = uxn,
     });
-
     const run_uxn_tests = b.addRunArtifact(uxn_tests);
 
-    // const uxn2_tests = b.addTest(.{
-    //     .root_module = uxn2,
-    // });
-    // const run_uxn2_tests = b.addRunArtifact(uxn2_tests);
+    const devices_tests = b.addTest(.{
+        .root_module = devices,
+    });
+    const run_devices_tests = b.addRunArtifact(devices_tests);
+
 
     const test_step = b.step("test", "Run Emulator Tests");
     test_step.dependOn(&run_uxn_tests.step);
-    // test_step.dependOn(&run_uxn2_tests.step);
+    test_step.dependOn(&run_devices_tests.step);
 }
-

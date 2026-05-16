@@ -1,144 +1,125 @@
 const std = @import("std");
 const uxn = @import("uxn");
+const Console = @import("devices").Console;
 const print = @import("std").debug.print;
 
 
-const EOF: u8 = 0x04;
-
-var threaded= std.Io.Threaded.init_single_threaded;
-var io = threaded.io();
-
-// console
-// 10 vector   18      write
-// 11 19 error
-// 12 read 1a --
-// 13 -- 1b --
-// 14 -- 1c addr*
-// 15 -- 1d
-// 16 -- 1e mode
-// 17 type 1f exec
-
-fn console_dei(cpu: *uxn.CPU, dev: u16, s: u1) u16 {
-    const x = cpu.fetch(dev, s);
-    return x;
-}
-
-fn console_deo(cpu: *uxn.CPU, dev: u16, value: u16, s: u1) void {
-    switch (dev) {
-        0x18 => {
-            const output = [_]u8{@truncate(value)};
-            std.Io.File.stdout().writeStreamingAll(io, &output) 
-                catch {print("Failed to write", .{});};
-        },
-        0x19 => {
-            const output = [_]u8{@truncate(value)};
-            std.Io.File.stderr().writeStreamingAll(io, &output) 
-                catch {print("Failed to write", .{});};
-        },
-        else => {
-            cpu.store(value, dev, s);
-        },
-    }
-}
+const UXNCLIError= error {
+    MissingROM,
+};
 
 
 pub fn main(init: std.process.Init) !void {
-    // const io = init.io;
+
+    const io = init.io;
 
     const args = try init.minimal.args.toSlice(init.arena.child_allocator);
 
     if (args.len < 2) {
         //add error
-        print("no args found\n", .{});
-        return;
-    }
-
-    // const arg1: []u8 = std.mem.span();
-    const file = try std.Io.Dir.cwd().openFile(io, args[1], .{});
-
-    var program = [_]u8{0} ** 0xff00;
-
-    // const nread = try file.read(&program);
-    const nread = try file.readPositionalAll(io, &program, 0);
-
-    var cpu = uxn.CPU.init();
-
-
-    for (cpu.ram) |b| {
-        if (b != 0) break;
-    } else {
-        // print("The initial ram is zeroed.\n", .{});
-    }
-
-    cpu.load_rom(program[0..nread]);
-
-    for (cpu.ram[0..0xFF]) |b| {
-        if (b != 0) break;
-    } else {
-        // print("The initial devices are zeroed.\n", .{});
+        std.log.err("usage uxncli <input.rom> [args...]\n", .{});
+        return UXNCLIError.MissingROM;
     }
 
 
+    const program = try std.Io.Dir.cwd()
+        .readFileAlloc(io, args[1], init.gpa, .unlimited);
+    defer init.gpa.free(program);
+    
+    var vm = try uxn.VM.init(init.gpa);
+    defer vm.deinit(init.gpa);
 
-    // INIT
+    try vm.load_rom(program);
 
-    const ConsoleInput = struct {c: u8, t: u8};
-    var argi: usize = 2;
-    var argi_j: usize = 0;
-    var stdin_end = false;
-    const stdin_buffer = try init.gpa.alloc(u8, 265);
+    const uxn_args = try convertToMutableSlices(init.gpa, args[2..]);
+    defer {
+        for (uxn_args) |slice| init.gpa.free(slice);
+        init.gpa.free(uxn_args);
+    }
+
+    const stdin_buffer = try init.gpa.alloc(u8, 0x100);
+    var stdin = std.Io.File.stdin().reader(io, stdin_buffer);
     defer init.gpa.free(stdin_buffer);
 
-    var stdin = std.Io.File.stdin().reader(io, stdin_buffer);
+    const stdout_buffer = try init.gpa.alloc(u8, 0x100);
+    var stdout = std.Io.File.stdout().writer(io, stdout_buffer);
+    defer init.gpa.free(stdout_buffer);
 
-    _ = stdin.interface.peek(1) catch { stdin_end = true; };
-    
-    if (args.len > 2) {
-        // print("there are args!\n", .{});
-        cpu.store( 2, 0x17, 0);
-    } else if (!stdin_end) {
-        cpu.store( 1, 0x17, 0);
-    }
+    const stderr_buffer = try init.gpa.alloc(u8, 0x100);
+    var stderr = std.Io.File.stderr().writer(io, stderr_buffer);
+    defer init.gpa.free(stderr_buffer);
 
-    //  Reset vector.
-    cpu.eval(console_dei, console_deo);
-    while (cpu.fetch(0x0f, 0) == 0) {
+    var console: Console = Console.init(
+        &stdin.interface,
+        &stdout.interface,
+        &stderr.interface,
+        uxn_args
+    );
 
-        var console_input: ConsoleInput =  undefined;
-        if (argi < args.len) {
-            if (argi_j < args[argi].len) {
-                console_input.c = args[argi][argi_j];
-                console_input.t = 2;
-                argi_j += 1;
-            } else {
-                argi += 1;
-                console_input.c = '\n';
-                console_input.t = if (argi == args.len) 4 else 3;
-                argi_j = 0;
-            }
-        } else if (!stdin_end) {
-            var output = [_]u8{0};
-            stdin.interface.readSliceAll(&output) catch {
-                output[0] = EOF;
-            };
 
-            console_input.c = output[0];
-            console_input.t = if (output[0] == EOF) 4 else 1;
-        } else {
-            console_input.c = EOF;
-            console_input.t = 0;
-        }
+    const dev = uxn.Device.init(&console);
 
-        cpu.store(console_input.c, 0x12, 0);
-        cpu.store(console_input.t, 0x17, 0);
+    // Reset Vector
+    console.boot(&vm);
+    vm.eval(uxn.RESET_VECTOR, dev);
 
-        if (cpu.fetch(0x10, 0) != 0) {
-            cpu.pc = cpu.fetch(0x10, 1);
-            cpu.eval(console_dei, console_deo);
-        } else {
-            break;
-        }
+    // Console Vector
+    while (!console.end_args() or vm.ram[0x0f] == 0) {
+        console.read_input(&vm);
+        // print("{d} - {d}\n", .{vm.ram[Console.READ], vm.ram[Console.TYPE]});
+        const console_vector_addr = vm.fetch(Console.VECTOR, 1);
+        vm.eval(console_vector_addr, dev);
+    } 
 
-    }
+    std.process.exit(vm.ram[0x0f] & 0x7f);
+
+    // console.read_input(&vm);
+    // const console_vector_addr = vm.fetch(Console.VECTOR, 1);
+    // vm.eval(console_vector_addr, dev);
+
+    // testing BEGIN
+    // while (!console.end_args()) {
+    //     const out = console.update_input();
+    //     // (comptime fmt: []const u8, args: anytype)
+    //     if ( std.ascii.isPrint(out.c) )
+    //     print("from {} Arg from Console: {c} {any}\n", .{console.argi, out.c, out.t})
+    //     else 
+    //     print("from {} Arg from Console: 0x{X:0>2} {any}\n", .{console.argi, out.c, out.t});
+    // } 
+
+    // if (console.end_inIo()) {
+    //     print("There is no stdin...\n", .{});
+    // }
+
+    // while (!console.end_inIo()) {
+    //     // print("has args\n", .{});
+    //     const out = console.update_input();
+    //     // (comptime fmt: []const u8, args: anytype)
+    //     if ( std.ascii.isPrint(out.c) )
+    //     print("Arg from stdin: {c} {any}\n", .{out.c, out.t})
+    //     else 
+    //     print("Arg from stdin: 0x{X:0>2} {any}\n", .{out.c, out.t});
+    // } 
+
+    // const lastOut = console.update_input();
+    // print("This should be the no-queue: 0x{X:0>2} {any}\n", .{lastOut.c, lastOut.t});
+    // testing END
 }
 
+
+
+fn convertToMutableSlices(allocator: std.mem.Allocator, input: []const [:0]const u8) ![][]u8 {
+    const result = try allocator.alloc([]u8, input.len);
+    errdefer {
+        allocator.free(result);
+        // for (result) |slice| allocator.free(slice);
+    }
+
+    for (input, 0..) |src, i| {
+        const dst = try allocator.alloc(u8, src.len);
+        @memcpy(dst, src);
+        result[i] = dst;
+    }
+
+    return result;
+}

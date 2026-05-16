@@ -44,10 +44,11 @@ const JCI:   u8   = 0x20;
 const JMI:   u8   = 0x40; 
 const JSI:   u8   = 0x60; 
 
-const RESET_VECTOR: u16 = 0x100;
+pub const RESET_VECTOR: u16 = 0x100;
 
-const BANKS = 0x10;
-const RAM_SIZE = BANKS * 0x10000;
+const BANKS: usize = 0x10;
+const BANK_SIZE: usize = 0x10000;
+const RAM_SIZE: usize = BANKS * 0x10000;
 
 // Holds Instruction data
 // data lay out 'kr2ooooo'
@@ -77,14 +78,14 @@ const Instruction = packed struct {
                         try writer.print("LIT", .{}); 
                         if (self.short_mode == 1) try writer.print("2", .{}); 
                         if (self.return_mode == 1) try writer.print("r", .{}); 
-                        try writer.print("({x:0>2})", .{ self.to_u8() });
+                        try writer.print("(0x{x:0>2})", .{ self.to_u8() });
                         return;
                     },
-                    BRK =>  { return try writer.print("BRK({x:0>2})", .{self.to_u8()});  },
-                    JCI =>  { return try writer.print("JCI({x:0>2})", .{self.to_u8()}); },
-                    JMI =>  { return try writer.print("JMI({x:0>2})", .{self.to_u8()}); },
-                    JSI =>  { return try writer.print("JSI({x:0>2})", .{self.to_u8()}); },
-                    else => { return try writer.print("UNK({x:0>2})", .{self.to_u8()}); },
+                    BRK =>  { return try writer.print("BRK(0x{X:0>2})", .{self.to_u8()});  },
+                    JCI =>  { return try writer.print("JCI(0x{X:0>2})", .{self.to_u8()}); },
+                    JMI =>  { return try writer.print("JMI(0x{X:0>2})", .{self.to_u8()}); },
+                    JSI =>  { return try writer.print("JSI(0x{X:0>2})", .{self.to_u8()}); },
+                    else => { return try writer.print("UNK(0x{X:0>2})", .{self.to_u8()}); },
                 }
             },
             .INC => { try writer.print("INC", .{}); },
@@ -122,7 +123,7 @@ const Instruction = packed struct {
         if (self.short_mode == 1) try writer.print("2", .{}); 
         if (self.keep_mode == 1) try writer.print("k", .{}); 
         if (self.return_mode == 1) try writer.print("r", .{}); 
-        try writer.print("({x:0>2})", .{ self.to_u8() });
+        try writer.print("(0x{X:0>2})", .{ self.to_u8() });
     }
 };
 
@@ -152,6 +153,12 @@ pub fn jump(pc: u16, addr: u16, s: u1) u16 {
     }
 }
 
+
+
+const VMError= error {
+    ROMTooLarge,
+};
+
 pub const VM = struct {
     stk: [2]Stack,
     ptr: [2]u8,
@@ -160,13 +167,13 @@ pub const VM = struct {
     const Self = @This();
 
     pub fn init(gpa: std.mem.Allocator) !Self {
-        var _ram = try gpa.alloc(u8, RAM_SIZE);
-        for (0.._ram.len) |i| _ram[i] = 0;
+        var ram = try gpa.alloc(u8, RAM_SIZE);
+        for (0..ram.len) |i| ram[i] = 0;
 
         return .{
             .ptr = .{0, 0},
             .stk = .{std.mem.zeroes(Stack), std.mem.zeroes(Stack)},
-            .ram = _ram,
+            .ram = ram,
         };
     }
 
@@ -174,7 +181,8 @@ pub const VM = struct {
         gpa.free(self.ram);
     }
 
-    pub fn load_rom(self: *Self, program: []const u8) void {
+    pub fn load_rom(self: *Self, program: []const u8) VMError!void {
+        if (program.len > BANK_SIZE - RESET_VECTOR) return VMError.ROMTooLarge;
         for (program, RESET_VECTOR..) |program_memory, ram_i| {
             self.ram[ram_i] = program_memory;
         }
@@ -225,6 +233,7 @@ pub const VM = struct {
 
         while (true) {
             const instruction = Instruction.from_u8(vm.ram[pc]);
+            // std.debug.print("running {f}\n", .{instruction});
             const r = instruction.return_mode;
             const s = instruction.short_mode;
             const k = instruction.keep_mode;
