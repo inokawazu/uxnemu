@@ -527,7 +527,7 @@ test "SWP" {
 
     var vm = try VM.init(std.testing.allocator);
     defer vm.deinit(std.testing.allocator);
-    vm.load_rom(&test_program);
+    try vm.load_rom(&test_program);
     var dd: DummyDevice = .{};
     vm.eval(RESET_VECTOR, Device.init(&dd));
     try std.testing.expectEqualSlices(u8, &[_]u8{0x78, 0x56, 0x12, 0x34}, vm.stk[0][0..4]);
@@ -546,7 +546,7 @@ test "NIP" {
 
     var vm = try VM.init(std.testing.allocator);
     defer vm.deinit(std.testing.allocator);
-    vm.load_rom(&test_program);
+    try vm.load_rom(&test_program);
     var dev: DummyDevice = .{};
     vm.eval(RESET_VECTOR, Device.init(&dev));
 
@@ -568,7 +568,7 @@ test "test LIT2 and POP2" {
 
     var vm = try VM.init(std.testing.allocator);
     defer vm.deinit(std.testing.allocator);
-    vm.load_rom(&test_program);
+    try vm.load_rom(&test_program);
     var dd: DummyDevice = .{};
     vm.eval(RESET_VECTOR, Device.init(&dd));
 
@@ -600,7 +600,7 @@ test "ROT" {
     };
     var vm = try VM.init(std.testing.allocator);
     defer vm.deinit(std.testing.allocator);
-    vm.load_rom(&test_program);
+    try vm.load_rom(&test_program);
     var dd: DummyDevice = .{};
     vm.eval(RESET_VECTOR, Device.init(&dd));
 
@@ -624,7 +624,7 @@ test "DUP" {
     };
     var vm = try VM.init(std.testing.allocator);
     defer vm.deinit(std.testing.allocator);
-    vm.load_rom(&test_program);
+    try vm.load_rom(&test_program);
     var dd: DummyDevice = .{};
     vm.eval(RESET_VECTOR, Device.init(&dd));
 
@@ -646,7 +646,7 @@ test "test program INC five times, starting from 0x00" {
 
     var vm = try VM.init(std.testing.allocator);
     defer vm.deinit(std.testing.allocator);
-    vm.load_rom(&test_program);
+    try vm.load_rom(&test_program);
     var dd: DummyDevice = .{};
     vm.eval(RESET_VECTOR, Device.init(&dd));
 
@@ -669,7 +669,7 @@ test "test program to find 1 + 2 = 3" {
 
     var vm = try VM.init(std.testing.allocator);
     defer vm.deinit(std.testing.allocator);
-    vm.load_rom(&test_program);
+    try vm.load_rom(&test_program);
     var dd: DummyDevice = .{};
     vm.eval(RESET_VECTOR, Device.init(&dd));
 

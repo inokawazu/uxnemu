@@ -4,8 +4,6 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-
-
     const uxn = b.addModule("uxn", .{
         .root_source_file = b.path("src/uxn.zig"),
         .target = target,
@@ -14,12 +12,10 @@ pub fn build(b: *std.Build) void {
     const devices = b.addModule("devices", .{
         .root_source_file = b.path("src/devices/devices.zig"),
         .target = target,
-            .imports = &.{
-                .{ .name = "uxn", .module = uxn },
-            },
+        .imports = &.{
+            .{ .name = "uxn", .module = uxn },
+        },
     });
-
-
 
     const exe = b.addExecutable(.{
         .name = "uxncli",
@@ -34,38 +30,53 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
-
-
-
-    b.installArtifact(exe);
-
-    const run_step = b.step("run_cli", "Run the cli emulator");
-
-    const run_cmd = b.addRunArtifact(exe);
-    run_step.dependOn(&run_cmd.step);
-
-    run_cmd.step.dependOn(b.getInstallStep());
-
-    if (b.args) |args| {
-        run_cmd.addArgs(args);
-    }
-
-
-
-
-
-    const uxn_tests = b.addTest(.{
-        .root_module = uxn,
-    });
-    const run_uxn_tests = b.addRunArtifact(uxn_tests);
-
-    const devices_tests = b.addTest(.{
-        .root_module = devices,
-    });
-    const run_devices_tests = b.addRunArtifact(devices_tests);
-
+    addExeToBuild(b, exe, "run_cli", "Run the cli emulator");
 
     const test_step = b.step("test", "Run Emulator Tests");
-    test_step.dependOn(&run_uxn_tests.step);
-    test_step.dependOn(&run_devices_tests.step);
+
+    // uxn test files
+    const uxn_test_files = [_][]const u8{
+        "src/uxn.zig",
+        // add more uxn source files here as needed
+    };
+
+    for (uxn_test_files) |path| {
+        const t = b.addTest(.{
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(path),
+                .target = target,
+            }),
+        });
+        test_step.dependOn(&b.addRunArtifact(t).step);
+    }
+
+    // devices test files — each gets its own test artifact so tests in
+    // sibling files (imported via relative paths) actually run
+    const devices_test_files = [_][]const u8{
+        "src/devices/devices.zig",
+        "src/devices/system.zig",
+        // add more device source files here as needed
+    };
+
+    for (devices_test_files) |path| {
+        const t = b.addTest(.{
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(path),
+                .target = target,
+                .imports = &.{
+                    .{ .name = "uxn", .module = uxn },
+                },
+            }),
+        });
+        test_step.dependOn(&b.addRunArtifact(t).step);
+    }
+}
+
+fn addExeToBuild(b: *std.Build, exe: *std.Build.Step.Compile, name: []const u8, description: []const u8) void {
+    b.installArtifact(exe);
+    const run_cmd = b.addRunArtifact(exe);
+    if (b.args) |args| run_cmd.addArgs(args);
+
+    const run_step = b.step(name, description);
+    run_step.dependOn(&run_cmd.step);
 }

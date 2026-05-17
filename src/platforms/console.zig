@@ -64,7 +64,8 @@ pub fn main(init: std.process.Init) !void {
     vm.eval(uxn.RESET_VECTOR, dev);
 
     // Console Vector
-    while (!console.end_args() or vm.ram[0x0f] == 0) {
+    while (vm.ram[0x0f] == 0) {
+    // while (!console.end_args() and vm.ram[0x0f] == 0) {
         console.read_input(&vm);
         // print("{d} - {d}\n", .{vm.ram[Console.READ], vm.ram[Console.TYPE]});
         const console_vector_addr = vm.fetch(Console.VECTOR, 1);
