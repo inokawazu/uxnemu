@@ -1,13 +1,12 @@
 const std = @import("std");
 const uxn = @import("uxn");
 const Console = @import("devices").Console;
+const System = @import("devices").System;
 const print = @import("std").debug.print;
-
 
 const UXNCLIError= error {
     MissingROM,
 };
-
 
 pub fn main(init: std.process.Init) !void {
 
@@ -55,56 +54,25 @@ pub fn main(init: std.process.Init) !void {
         &stderr.interface,
         uxn_args
     );
+    
+    var system: System = .{ .debug_writer = &stderr.interface };
 
+    var cli_dev: CLI = .{ .console = &console, .system = &system };
 
-    const dev = uxn.Device.init(&console);
+    const dev = uxn.Device.init(&cli_dev);
 
     // Reset Vector
     console.boot(&vm);
     vm.eval(uxn.RESET_VECTOR, dev);
 
     // Console Vector
-    while (vm.ram[0x0f] == 0) {
-    // while (!console.end_args() and vm.ram[0x0f] == 0) {
+    while (vm.ram[Console.VECTOR] != 0 and System.state(&vm) == 0) {
         console.read_input(&vm);
-        // print("{d} - {d}\n", .{vm.ram[Console.READ], vm.ram[Console.TYPE]});
         const console_vector_addr = vm.fetch(Console.VECTOR, 1);
         vm.eval(console_vector_addr, dev);
     } 
 
-    std.process.exit(vm.ram[0x0f] & 0x7f);
-
-    // console.read_input(&vm);
-    // const console_vector_addr = vm.fetch(Console.VECTOR, 1);
-    // vm.eval(console_vector_addr, dev);
-
-    // testing BEGIN
-    // while (!console.end_args()) {
-    //     const out = console.update_input();
-    //     // (comptime fmt: []const u8, args: anytype)
-    //     if ( std.ascii.isPrint(out.c) )
-    //     print("from {} Arg from Console: {c} {any}\n", .{console.argi, out.c, out.t})
-    //     else 
-    //     print("from {} Arg from Console: 0x{X:0>2} {any}\n", .{console.argi, out.c, out.t});
-    // } 
-
-    // if (console.end_inIo()) {
-    //     print("There is no stdin...\n", .{});
-    // }
-
-    // while (!console.end_inIo()) {
-    //     // print("has args\n", .{});
-    //     const out = console.update_input();
-    //     // (comptime fmt: []const u8, args: anytype)
-    //     if ( std.ascii.isPrint(out.c) )
-    //     print("Arg from stdin: {c} {any}\n", .{out.c, out.t})
-    //     else 
-    //     print("Arg from stdin: 0x{X:0>2} {any}\n", .{out.c, out.t});
-    // } 
-
-    // const lastOut = console.update_input();
-    // print("This should be the no-queue: 0x{X:0>2} {any}\n", .{lastOut.c, lastOut.t});
-    // testing END
+    std.process.exit(System.state(&vm) & 0x7f);
 }
 
 
@@ -124,3 +92,26 @@ fn convertToMutableSlices(allocator: std.mem.Allocator, input: []const [:0]const
 
     return result;
 }
+
+const CLI = struct {
+    console: *Console,
+    system: *System,
+
+    const Self = @This();
+
+    pub fn dei(self: *Self, vm: *uxn.VM, dev: u16, s: u1) u16 {
+        switch (dev) {
+            0x00...0x0f => {return self.system.dei(vm, dev, s);},
+            0x10...0x1f => {return self.console.dei(vm, dev, s);},
+            else => {return vm.fetch(dev, s);}
+        }
+    }
+
+    pub fn deo(self: *Self, vm: *uxn.VM, dev: u16, value: u16, s: u1) void {
+        switch (dev) {
+            0x00...0x0f => {return self.system.deo(vm, dev, value, s);},
+            0x10...0x1f => {return self.console.deo(vm, dev, value, s);},
+            else => {vm.store(value, dev, s);}
+        }
+    }
+};

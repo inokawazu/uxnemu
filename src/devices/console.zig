@@ -56,9 +56,9 @@ pub fn boot(self: *Self, vm: *uxn.VM) void {
 }
 
 
-pub fn dei(_: *Self, cpu: *uxn.VM, dev: u16, s: u1) u16 {
+pub fn dei(_: *Self, vm: *uxn.VM, dev: u16, s: u1) u16 {
     // std.debug.print("running DEO for device 0x{X:2>0}\n", .{dev});
-    const x = cpu.fetch(dev, s);
+    const x = vm.fetch(dev, s);
     return x;
 }
 
