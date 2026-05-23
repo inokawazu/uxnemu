@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const Opcode = enum(u5) {
+pub const Opcode = enum(u5) {
     BRK = 0x00,
     INC = 0x01,
     POP = 0x02,
@@ -35,14 +35,14 @@ const Opcode = enum(u5) {
     SFT = 0x1f,
 };
 
-const LIT:   u8   = 0x80;
-const LIT2:  u8   = 0xa0;
-const LITr:  u8   = 0xc0;
-const LIT2r: u8   = 0xe0;
-const BRK:   u8   = 0x00;
-const JCI:   u8   = 0x20; 
-const JMI:   u8   = 0x40; 
-const JSI:   u8   = 0x60; 
+pub const LIT:   u8   = 0x80;
+pub const LIT2:  u8   = 0xa0;
+pub const LITr:  u8   = 0xc0;
+pub const LIT2r: u8   = 0xe0;
+pub const BRK:   u8   = 0x00;
+pub const JCI:   u8   = 0x20; 
+pub const JMI:   u8   = 0x40; 
+pub const JSI:   u8   = 0x60; 
 
 pub const RESET_VECTOR: u16 = 0x100;
 
@@ -56,7 +56,7 @@ const RAM_SIZE: usize = BANKS * 0x10000;
 // r = r mode
 // 2 = '2 mode' (short mode)
 // o = opcode
-const Instruction = packed struct {
+pub const Instruction = packed struct {
     opcode: Opcode = Opcode.BRK,
     short_mode: u1 = 0,
     return_mode: u1 = 0,
@@ -66,7 +66,7 @@ const Instruction = packed struct {
         return @bitCast(b);
     }
 
-    fn to_u8(self: Instruction) u8 {
+    pub fn to_u8(self: Instruction) u8 {
         return @bitCast(self);
     }
 
