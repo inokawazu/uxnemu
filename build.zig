@@ -17,7 +17,7 @@ pub fn build(b: *std.Build) void {
         },
     });
 
-    const exe = b.addExecutable(.{
+    const cli_exe = b.addExecutable(.{
         .name = "uxncli",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/platforms/cli.zig"),
@@ -30,7 +30,23 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
-    addExeToBuild(b, exe, "run_cli", "Run the cli emulator");
+    addExeToBuild(b, cli_exe, "run_cli", "Run the cli emulator");
+
+
+    const asm_exe = b.addExecutable(.{
+        .name = "uxnasm",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/asm/uxnasm.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "uxn", .module = uxn },
+                .{ .name = "devices", .module = devices },
+            },
+        }),
+    });
+
+    addExeToBuild(b, asm_exe, "run_asm", "Run the assembler");
 
     const test_step = b.step("test", "Run Emulator Tests");
 

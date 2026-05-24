@@ -1,5 +1,6 @@
 const std = @import("std");
-const uxn = @import("uxn.zig");
+const uxn = @import("uxn");
+
 source: []u8,
 pos: usize = 0,
 gen_ptr: usize = 0,
@@ -215,7 +216,7 @@ pub fn assemble(self: *Self) !void {
     self.max_gen_ptr = 0;
     self.second_pass = true;
     try self._assemble();
-    printStringHashMap(u16, self.labels);
+    // printStringHashMap(u16, self.labels);
 }
 
 fn _assemble(self: *Self) !void {
@@ -291,7 +292,6 @@ fn _assemble(self: *Self) !void {
             try self.handleAddressing(c);
         } else if (self.tryExpectCharClass("!?")) |jt| {
             const label = try self.consumeAddressingLabel();
-            std.debug.print("lable: {s}\n", .{label});
 
             const maybe_addr = try self.getLabelAddr(label);
             if (maybe_addr) |addr| {
