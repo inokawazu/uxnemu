@@ -18,6 +18,7 @@ const Self = @This();
 const WS = "\t\n\x0B\x0C\r ";
 const HEX = "0123456789abcdefABCDEF";
 const DEFAULT_CONTEXT = "Top";
+const NON_LABEL_START_RUNES = "|$@&,_.-;=!?#\"{}~()[]%";
 
 const AssemblerError = error {
     InvalidAddressingType,
@@ -128,13 +129,15 @@ fn consumeLabel(self: *Self) ![]u8 {
     }
     const token = self.source[start_pos..self.pos];
 
-    // TODO: check for runic chars
     // TODO: check if isOpCode
     // TODO: add other checks
     if (
-        token.len == 0 or allSlice(u8, token, std.ascii.isHex)
+        token.len == 0 or 
+        allSlice(u8, token, std.ascii.isHex) or 
+
+        std.mem.containsAtLeast(u8, NON_LABEL_START_RUNES, 1, token[0..1])
     ) {
-        // std.debug.print("Invalid Name: '{s}'\n", .{token});
+        std.debug.print("Invalid Name: '{s}'\n", .{token});
         self.pos = start_pos;
         return AssemblerError.InvalidLabel;
     }
@@ -442,3 +445,50 @@ fn printStringHashMap(comptime T: type, hm: std.StringHashMap(T)) void {
         std.debug.print("\t'{s}': 0x{x:0>4}\n", .{key.key_ptr.*, key.value_ptr.*});
     }
 }
+
+
+// fn evaluateAnonymousLabels(self: *Self) !void {
+//     const nlb = std.mem.count(u8, self.source, '{');
+
+//     var source = try std.ArrayList(u8).initCapacity(
+//         self.arena, self.source.len + 7 * nlb// lam0000
+//         );
+//     source.insertSlice(self.arena, 0, self.source);
+    
+
+
+//     var bracketStack = try std.ArrayList(u16).initCapacity(self.arena, nlb);
+
+//     const labelBuff  = [_]u8{'l', 'a', 'm', 'x', 'x', 'x', 'x'};
+
+//     var i: usize = 0;
+//     var label_j: u16 = 0;
+//     while (i < source.items.len) : (i += 1) {
+//         const c = source.items.len[i];
+//         if (c == '{') {
+//             try bracketStack.append(self.arena, @intCast(i));
+//         } else if (c == '}') {
+//             const lb_pos = bracketStack.pop() orelse {
+//                 return AssemblerError.UnmatchedRightAnonBracket;
+//             };
+//             const rb = source.orderedRemove(i);
+//             const lb = source.orderedRemove(lb_pos);
+//             // if (rb != '}' or lb != '{') {
+//             //     std.debug.print("mismatch of bracketStacks, '{c}{c}' should be '{}'.", .{lb, rb});
+//             //     return AssemblerError.BracketCheckFail;
+//             // }
+//             const items = try std.fmt.bufPrint(labelBuff, "lam{x:0>4}", .{label_j});
+//             try source.insertSlice(self.arena, lb, );
+//         }
+//     }
+// }
+
+//    v  
+// 012345
+// 01245  
+// 012345
+//
+// {
+// {}
+// {{}
+// } X
