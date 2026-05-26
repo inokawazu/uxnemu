@@ -316,15 +316,6 @@ fn _assemble(self: *Self) !void {
                     return AssemblerError.InvalidLabelType;
                 },
             }
-            // } else if (self.tryExpectChar('$')) {
-            //     // TODO: add label
-            //     var rel_addr: u16 = undefined;
-            //     if (self.tryConsumeNumber()) |num| {
-            //         rel_addr = num;
-            //     } else {
-            //         return AssemblerError.InvalidNumberOrLabel;
-            //     }
-            //     self.gen_ptr += rel_addr;
         } else if (self.tryExpectCharClass("@&")) |c| {
             var label = try self.consumeLabel();
             const is_lambda = std.mem.startsWith(u8, label, "lambda");
@@ -336,7 +327,6 @@ fn _assemble(self: *Self) !void {
             }
             try self.labels.put(label, @intCast(self.gen_ptr));
         } else if (self.tryExpectCharClass(",.;_-=")) |c| {
-            // std.debug.print("ERROR:{s}\n", .{self.source[self.pos..]});
             try self.handleAddressing(c);
         } else if (self.tryExpectCharClass("!?")) |jt| {
             const label = try self.consumeAddressingLabel();
@@ -575,14 +565,3 @@ fn getUpTo(haystack: []u8, needle: []const u8) []u8 {
         return haystack;
     }
 }
-
-//    v
-// 012345
-// 01245
-// 01267845
-// 012@67845
-//
-// {
-// {}
-// {{}
-// } X
