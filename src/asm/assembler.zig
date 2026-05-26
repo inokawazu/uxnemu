@@ -33,6 +33,7 @@ const AssemblerError = error {
     OverflowMemory,
     RelativeAddresOverFlow,
     UnknownInput,
+    UnmatchedRightAnonBracket,
     ZeroPageWrite,
 };
 
@@ -112,10 +113,15 @@ fn allSlice(comptime T: type, slice: []const T, pred: fn (elem: T) bool) bool {
 fn getLabelAddr(self: *Self, key: []u8) !?u16 {
     const maybe_addr = self.labels.get(key);
     if (self.second_pass) {
+        std.debug.print("MISSING LABEL: '{s}'\n", .{key});
         const addr = maybe_addr orelse return AssemblerError.MissingLabel;
         return addr;
     }
     return maybe_addr;
+}
+
+fn tryConsumeLabel(self: *Self) ?[]u8 {
+    return self.consumeLabel() catch null;
 }
 
 fn consumeLabel(self: *Self) ![]u8 {
@@ -197,6 +203,7 @@ fn handleAddressing(self: *Self, atype: u8) !void {
         .relative => {
             var raddr: i32 = @intCast(addr);
             raddr -= @intCast(self.gen_ptr);
+            raddr -= 2;
             if ( raddr < -128 or raddr > 127 ) {
                 return AssemblerError.RelativeAddresOverFlow;
             } 
@@ -213,11 +220,15 @@ fn handleAddressing(self: *Self, atype: u8) !void {
 
 
 pub fn assemble(self: *Self) !void {
+    try self.evaluateAnonymousLabels();
+    std.debug.print("No Anonymous Labels:\n{s}\n", .{self.source});
     try self._assemble();
+    printStringHashMap(u16, self.labels);
+
     self.pos = 0;
     self.gen_ptr = 0;
-    self.max_gen_ptr = 0;
     self.second_pass = true;
+
     try self._assemble();
     // printStringHashMap(u16, self.labels);
 }
@@ -270,7 +281,15 @@ fn _assemble(self: *Self) !void {
             }
             switch (lt) {
                 '|' => { self.gen_ptr = addr; },
-                '$' => { self.gen_ptr += addr; },
+                '$' => { 
+                    if (self.gen_ptr > 0xFF) {
+                        // NOTE: in the original implementation, relative padding runes
+                        //      add the the end of a file do not emit bytes.
+                        for (0..addr) |_| try self.writeByte(0);
+                    } else {
+                        self.gen_ptr += addr;
+                    }
+                },
                 else => { return AssemblerError.InvalidLabelType;}
             }
         // } else if (self.tryExpectChar('$')) {
@@ -284,14 +303,16 @@ fn _assemble(self: *Self) !void {
         //     self.gen_ptr += rel_addr;
         } else if (self.tryExpectCharClass("@&")) |c| {
             var label = try self.consumeLabel();
-            if (c == '@') {
-                self.context = label;
-            } else {
+            const is_lambda = std.mem.startsWith(u8, label, "lambda");
+            if (c == '@' and !is_lambda) {
+                self.context = getUpTo(label, "/");
+            } else if (!is_lambda) {
                 const slices = [3][]const u8{self.context, "/", label};
                 label = try std.mem.concat(self.arena, u8, &slices);
             }
             try self.labels.put(label, @intCast(self.gen_ptr));
         } else if (self.tryExpectCharClass(",.;_-=")) |c| {
+            // std.debug.print("ERROR:{s}\n", .{self.source[self.pos..]});
             try self.handleAddressing(c);
         } else if (self.tryExpectCharClass("!?")) |jt| {
             const label = try self.consumeAddressingLabel();
@@ -339,6 +360,19 @@ fn _assemble(self: *Self) !void {
                 } else {
                     try self.writeByte(c);
                 }
+            }
+        } else if (self.tryConsumeLabel()) |label| {
+            try self.writeByte(uxn.JSI);
+            if (try self.getLabelAddr(label)) |addr| {
+                var raddr: u32 = addr;
+                if (raddr < self.gen_ptr + 2) {
+                    raddr += 0x10000;
+                }
+                raddr -= @intCast(self.gen_ptr);
+                raddr -= 2;
+                try self.writeShort(@truncate(raddr));
+            } else {
+                self.gen_ptr += 2;
             }
         } else {
             return AssemblerError.UnknownInput;
@@ -447,46 +481,60 @@ fn printStringHashMap(comptime T: type, hm: std.StringHashMap(T)) void {
 }
 
 
-// fn evaluateAnonymousLabels(self: *Self) !void {
-//     const nlb = std.mem.count(u8, self.source, '{');
+fn evaluateAnonymousLabels(self: *Self) !void {
+    const nlb = std.mem.count(u8, self.source, "{");
+    var rev_buff  = "@lambdaxxxx".*;
 
-//     var source = try std.ArrayList(u8).initCapacity(
-//         self.arena, self.source.len + 7 * nlb// lam0000
-//         );
-//     source.insertSlice(self.arena, 0, self.source);
+    var source = try std.ArrayList(u8).initCapacity(
+        self.arena, self.source.len + rev_buff.len * nlb
+    );
+
+    try source.insertSlice(self.arena, 0, self.source);
+    var bracketStack = try std.ArrayList(u16).initCapacity(self.arena, nlb);
+
+    var i: usize = 0;
+    var label_j: u16 = 0;
+
+    while (i < source.items.len) : (i += 1) {
+        const c = source.items[i];
+        if (c == '{') {
+            try bracketStack.append(self.arena, @intCast(i));
+        } else if (c == '}') {
+            const lb_pos = bracketStack.pop() orelse {
+                return AssemblerError.UnmatchedRightAnonBracket;
+            };
+            const label = try std.fmt.bufPrint(
+                &rev_buff,
+                "lambda{x:0>4}",
+                .{label_j});
+            _ = source.orderedRemove(i);
+            try source.insertSlice(self.arena, i, label);
+            try source.insertSlice(self.arena, i, "@");
+
+            _ = source.orderedRemove(lb_pos);
+            try source.insertSlice(self.arena, lb_pos, label);
+            label_j += 1;
+        }
+    }
     
+    self.source = source.items;
+}
 
-
-//     var bracketStack = try std.ArrayList(u16).initCapacity(self.arena, nlb);
-
-//     const labelBuff  = [_]u8{'l', 'a', 'm', 'x', 'x', 'x', 'x'};
-
-//     var i: usize = 0;
-//     var label_j: u16 = 0;
-//     while (i < source.items.len) : (i += 1) {
-//         const c = source.items.len[i];
-//         if (c == '{') {
-//             try bracketStack.append(self.arena, @intCast(i));
-//         } else if (c == '}') {
-//             const lb_pos = bracketStack.pop() orelse {
-//                 return AssemblerError.UnmatchedRightAnonBracket;
-//             };
-//             const rb = source.orderedRemove(i);
-//             const lb = source.orderedRemove(lb_pos);
-//             // if (rb != '}' or lb != '{') {
-//             //     std.debug.print("mismatch of bracketStacks, '{c}{c}' should be '{}'.", .{lb, rb});
-//             //     return AssemblerError.BracketCheckFail;
-//             // }
-//             const items = try std.fmt.bufPrint(labelBuff, "lam{x:0>4}", .{label_j});
-//             try source.insertSlice(self.arena, lb, );
-//         }
-//     }
-// }
+// get up the character needle from the beginnging of the haystack but not including.
+// returns full string if needle is not present.
+fn getUpTo(haystack: [] u8, needle: [] const u8) []u8 {
+    if (std.mem.find(u8, haystack, needle)) |pos| {
+        return haystack[0..pos];
+    } else {
+        return haystack;
+    }
+}
 
 //    v  
 // 012345
 // 01245  
-// 012345
+// 01267845
+// 012@67845
 //
 // {
 // {}
