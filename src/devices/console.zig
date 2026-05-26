@@ -12,7 +12,7 @@ argi_j: usize,
 // reached_inIo_end: bool = true,
 
 pub const VECTOR: u8 = 0x10;
-pub const READ: u8  = 0x12;
+pub const READ: u8 = 0x12;
 pub const TYPE: u8 = 0x17;
 pub const WRITE: u8 = 0x18;
 pub const ERROR: u8 = 0x19;
@@ -33,10 +33,10 @@ pub fn init(inIo: *std.Io.Reader, outIo: *std.Io.Writer, errIo: *std.Io.Writer, 
 
     return .{
         .inIo = inIo,
-        .outIo = outIo, 
+        .outIo = outIo,
         .errIo = errIo,
         .args = args,
-        .argi = argi, 
+        .argi = argi,
         .argi_j = argii,
         // .end_inIo = end_inIo,
         // .end_args= end_args,
@@ -47,14 +47,12 @@ const reboot = boot;
 pub fn boot(self: *Self, vm: *uxn.VM) void {
     for (0x10..0x20) |i| vm.ram[i] = 0;
 
-
-    const input_type = if (!self.end_args()) 
-        ConsoleInputType.argument 
-        else 
+    const input_type = if (!self.end_args())
+        ConsoleInputType.argument
+    else
         ConsoleInputType.no_queue;
-    vm.store(@intFromEnum(input_type ), TYPE, 0);
+    vm.store(@intFromEnum(input_type), TYPE, 0);
 }
-
 
 pub fn dei(_: *Self, vm: *uxn.VM, dev: u16, s: u1) u16 {
     // std.debug.print("running DEO for device 0x{X:2>0}\n", .{dev});
@@ -67,13 +65,21 @@ pub fn deo(self: *Self, vm: *uxn.VM, dev: u16, value: u16, s: u1) void {
     switch (dev) {
         WRITE => {
             const output = [_]u8{@truncate(value)};
-            self.outIo.writeAll(&output) catch { @panic("Unimplemented\n"); };
-            self.outIo.flush() catch { @panic("Unimplemented\n"); };
+            self.outIo.writeAll(&output) catch {
+                @panic("Unimplemented\n");
+            };
+            self.outIo.flush() catch {
+                @panic("Unimplemented\n");
+            };
         },
         ERROR => {
             const output = [_]u8{@truncate(value)};
-            self.errIo.writeAll(&output) catch { @panic("Unimplemented\n"); };
-            self.errIo.flush() catch { @panic("Unimplemented\n"); };
+            self.errIo.writeAll(&output) catch {
+                @panic("Unimplemented\n");
+            };
+            self.errIo.flush() catch {
+                @panic("Unimplemented\n");
+            };
         },
         else => {},
     }
@@ -85,7 +91,9 @@ pub fn end_args(self: *const Self) bool {
 }
 
 pub fn end_inIo(self: *const Self) bool {
-    _ = self.inIo.peek(1) catch { return true; };
+    _ = self.inIo.peek(1) catch {
+        return true;
+    };
     return false;
 }
 
@@ -100,13 +108,10 @@ pub fn fetch_input(self: *Self) ConsoleInput {
             self.argi += 1;
             console_input.c = '\n';
 
-            if (self.argi == self.args.len) 
-            {
-                console_input.t = .argument_end; 
-            }
-            else 
-            { 
-                console_input.t = .argument_spacer; 
+            if (self.argi == self.args.len) {
+                console_input.t = .argument_end;
+            } else {
+                console_input.t = .argument_spacer;
             }
             self.argi_j = 0;
         }
@@ -130,7 +135,7 @@ pub fn read_input(self: *Self, vm: *uxn.VM) void {
     vm.store(@intFromEnum(input.t), @intCast(TYPE), 0);
 }
 
-const ConsoleInput = struct {c: u8, t: ConsoleInputType};
+const ConsoleInput = struct { c: u8, t: ConsoleInputType };
 
 // no-queue(0), stdin(1), argument(2), argument-spacer(3), argument-end(4)
 const ConsoleInputType = enum(u4) {

@@ -35,13 +35,12 @@ const CONTROLLER_VECTOR: u8 = 0x80;
 
 const RESET_VECTOR: u16 = 0x100;
 
-var system_colors: [4]raylib.struct_Color = .{ 
+var system_colors: [4]raylib.struct_Color = .{
     raylib.BLACK, raylib.WHITE, raylib.BLUE, raylib.RED,
 };
 
-var threaded= std.Io.Threaded.init_single_threaded;
+var threaded = std.Io.Threaded.init_single_threaded;
 var io = threaded.io();
-
 
 const Pixel = packed struct {
     color: u2,
@@ -52,7 +51,6 @@ const Pixel = packed struct {
     fill: u1,
     auto: u1,
 };
-
 
 fn ray_dei(cpu: *uxn.CPU, addr: u16, _: u1) u16 {
     switch (addr) {
@@ -65,7 +63,7 @@ fn ray_dei(cpu: *uxn.CPU, addr: u16, _: u1) u16 {
         else => {
             std.debug.print("NOT IMPLEMENTED DEI (0x{X:0>4})\n", .{addr});
             @panic("TODO");
-        }
+        },
     }
 }
 
@@ -87,26 +85,24 @@ fn ray_deo(cpu: *uxn.CPU, addr: u16, value: u16, s: u1) void {
         MOUSE_VECTOR, CONTROLLER_VECTOR => {
             cpu.store(value, addr, 1);
         },
-        SCREEN_X, SCREEN_X + 1, 
-        SCREEN_Y, SCREEN_Y + 1,
-        SCREEN_PIXEL, SCREEN_SPRITE,
-        SCREEN_AUTO => {
+        SCREEN_X, SCREEN_X + 1, SCREEN_Y, SCREEN_Y + 1, SCREEN_PIXEL, SCREEN_SPRITE, SCREEN_AUTO => {
             cpu.store(value, addr, s);
         },
         else => {
             std.debug.print("NOT IMPLEMENTED DEO (0x{X:0>4})\n", .{addr});
             @panic("TODO\n");
             // cpu.store(value, addr, s);
-        }
+        },
     }
     return;
 }
 
-
 pub fn main(init: std.process.Init) !void {
     var screen_buffer = try init.gpa.alloc(u8, WIDTH * HEIGHT);
     defer init.gpa.free(screen_buffer);
-    for (0..screen_buffer.len) |i| {screen_buffer[i] = 1;}
+    for (0..screen_buffer.len) |i| {
+        screen_buffer[i] = 1;
+    }
 
     var cpu = uxn.CPU.init();
 
@@ -121,9 +117,7 @@ pub fn main(init: std.process.Init) !void {
 
     const file_path = args[1];
 
-    const program = try std.Io.Dir.cwd().readFileAlloc(
-        io, file_path, init.gpa, .unlimited
-        );
+    const program = try std.Io.Dir.cwd().readFileAlloc(io, file_path, init.gpa, .unlimited);
     defer init.gpa.free(program);
 
     cpu.load_rom(program);
@@ -132,7 +126,6 @@ pub fn main(init: std.process.Init) !void {
 
     raylib.InitWindow(WIDTH, HEIGHT, "Raylib UXN");
     while (!raylib.WindowShouldClose()) {
-
         if (cpu.ram[SYSTEM_STATE] != 0) {
             raylib.CloseWindow();
         }
@@ -141,17 +134,12 @@ pub fn main(init: std.process.Init) !void {
             raylib.CloseWindow();
         }
 
-
         raylib.BeginDrawing();
 
         for (0..HEIGHT) |yi| {
             for (0..WIDTH) |xi| {
                 const color_index = screen_buffer[xi + WIDTH * yi];
-                raylib.DrawPixel(
-                    @intCast(xi), 
-                    @intCast(yi), 
-                    system_colors[color_index]
-                    );
+                raylib.DrawPixel(@intCast(xi), @intCast(yi), system_colors[color_index]);
             }
         }
 

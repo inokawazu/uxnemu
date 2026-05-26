@@ -20,7 +20,7 @@ const HEX = "0123456789abcdefABCDEF";
 const DEFAULT_CONTEXT = "Top";
 const NON_LABEL_START_RUNES = "|$@&,_.-;=!?#\"{}~()[]%";
 
-const AssemblerError = error {
+const AssemblerError = error{
     InvalidAddressingType,
     InvalidImmediateJumpType,
     InvalidLabel,
@@ -38,14 +38,13 @@ const AssemblerError = error {
 };
 
 pub fn init(arena: std.mem.Allocator, source: []u8) !Self {
-
-    var labels = 
+    var labels =
         std.StringHashMap(u16).init(arena);
     try labels.put(DEFAULT_CONTEXT, 0x10);
 
     const program = try arena.alloc(u8, 0x10000);
     errdefer arena.free(program);
-    return .{ 
+    return .{
         .arena = arena,
         .source = source,
         .labels = labels,
@@ -54,7 +53,7 @@ pub fn init(arena: std.mem.Allocator, source: []u8) !Self {
 }
 
 pub fn rom(self: *Self) []u8 {
-    return self.program[0x100..self.max_gen_ptr+1];
+    return self.program[0x100 .. self.max_gen_ptr + 1];
 }
 
 fn tryExpectChar(self: *Self, c: u8) bool {
@@ -66,7 +65,7 @@ fn tryExpectChar(self: *Self, c: u8) bool {
     }
 }
 
-fn tryExpectCharClass(self: *Self, class: [] const u8) ?u8 {
+fn tryExpectCharClass(self: *Self, class: []const u8) ?u8 {
     for (class) |c| {
         if (self.tryExpectChar(c)) return c;
     }
@@ -94,14 +93,12 @@ fn tryConsumeNumber(self: *Self) ?u16 {
 
     const token = self.source[start_pos..self.pos];
     // std.debug.print("token '{s}'\n", .{token});
-    return std.fmt.parseInt(u16, token, 16) 
-        catch {
-            // std.debug.print("token error {s}\n", .{@errorName(err)});
-            self.pos = start_pos;
-            return null;
-        };
+    return std.fmt.parseInt(u16, token, 16) catch {
+        // std.debug.print("token error {s}\n", .{@errorName(err)});
+        self.pos = start_pos;
+        return null;
+    };
 }
-
 
 fn allSlice(comptime T: type, slice: []const T, pred: fn (elem: T) bool) bool {
     for (slice) |elem| {
@@ -137,12 +134,10 @@ fn consumeLabel(self: *Self) ![]u8 {
 
     // TODO: check if isOpCode
     // TODO: add other checks
-    if (
-        token.len == 0 or 
-        allSlice(u8, token, std.ascii.isHex) or 
-
-        std.mem.containsAtLeast(u8, NON_LABEL_START_RUNES, 1, token[0..1])
-    ) {
+    if (token.len == 0 or
+        allSlice(u8, token, std.ascii.isHex) or
+        std.mem.containsAtLeast(u8, NON_LABEL_START_RUNES, 1, token[0..1]))
+    {
         std.debug.print("Invalid Name: '{s}'\n", .{token});
         self.pos = start_pos;
         return AssemblerError.InvalidLabel;
@@ -153,49 +148,72 @@ fn consumeLabel(self: *Self) ![]u8 {
 
 fn consumeAddressingLabel(self: *Self) ![]u8 {
     var is_relative = false;
-    if (self.tryExpectCharClass("/&")) |l| {_ = l; is_relative = true;}
+    if (self.tryExpectCharClass("/&")) |l| {
+        _ = l;
+        is_relative = true;
+    }
 
     var label = try self.consumeLabel();
     if (is_relative) {
-        const slices = [3][]const u8{self.context, "/", label};
+        const slices = [3][]const u8{ self.context, "/", label };
         label = try std.mem.concat(self.arena, u8, &slices);
     }
     return label;
 }
 
 fn handleAddressing(self: *Self, atype: u8) !void {
-    const Placement = enum {raw, literal};
-    const Position = enum {relative, absolute, zero_page};
+    const Placement = enum { raw, literal };
+    const Position = enum { relative, absolute, zero_page };
     var placement: Placement = undefined;
     var position: Position = undefined;
     switch (atype) {
-        ',' => { placement = .literal; position = .relative; },  // LIT
-        '.' => { placement = .literal; position = .zero_page; }, // LIT
-        ';' => { placement = .literal; position = .absolute; },  // LIT2 (absolute)
-        '_' => { placement = .raw;     position = .relative; },  // raw relative byte
-        '-' => { placement = .raw;     position = .zero_page; }, // raw zero-page byte
-        '=' => { placement = .raw;     position = .absolute; },  // raw absolute short
-        else => { return AssemblerError.InvalidAddressingType; }
+        ',' => {
+            placement = .literal;
+            position = .relative;
+        }, // LIT
+        '.' => {
+            placement = .literal;
+            position = .zero_page;
+        }, // LIT
+        ';' => {
+            placement = .literal;
+            position = .absolute;
+        }, // LIT2 (absolute)
+        '_' => {
+            placement = .raw;
+            position = .relative;
+        }, // raw relative byte
+        '-' => {
+            placement = .raw;
+            position = .zero_page;
+        }, // raw zero-page byte
+        '=' => {
+            placement = .raw;
+            position = .absolute;
+        }, // raw absolute short
+        else => {
+            return AssemblerError.InvalidAddressingType;
+        },
     }
 
     const label = try self.consumeAddressingLabel();
-    const addr = try self.getLabelAddr(label) 
-        orelse {
-            if (placement == .literal) self.gen_ptr += 1;
-            switch (position) {
-                .absolute => self.gen_ptr += 2,
-                .zero_page, .relative => self.gen_ptr += 1,
-            }
-            return;
-        };
+    const addr = try self.getLabelAddr(label) orelse {
+        if (placement == .literal) self.gen_ptr += 1;
+        switch (position) {
+            .absolute => self.gen_ptr += 2,
+            .zero_page, .relative => self.gen_ptr += 1,
+        }
+        return;
+    };
 
     if (placement == .literal) {
         switch (position) {
             .relative, .zero_page => {
                 try self.writeByte(uxn.LIT);
-            }, .absolute => {
+            },
+            .absolute => {
                 try self.writeByte(uxn.LIT2);
-            }
+            },
         }
     }
 
@@ -204,20 +222,21 @@ fn handleAddressing(self: *Self, atype: u8) !void {
             var raddr: i32 = @intCast(addr);
             raddr -= @intCast(self.gen_ptr);
             raddr -= 2;
-            if ( raddr < -128 or raddr > 127 ) {
+            if (raddr < -128 or raddr > 127) {
                 return AssemblerError.RelativeAddresOverFlow;
-            } 
+            }
             const i8raddr: i8 = @intCast(raddr);
             const u8raddr: u8 = @bitCast(i8raddr);
             try self.writeByte(u8raddr);
-        }, .absolute => {
+        },
+        .absolute => {
             try self.writeShort(addr);
-        }, .zero_page => {
+        },
+        .zero_page => {
             try self.writeByte(@truncate(addr));
         },
     }
 }
-
 
 pub fn assemble(self: *Self) !void {
     try self.evaluateAnonymousLabels();
@@ -235,11 +254,10 @@ pub fn assemble(self: *Self) !void {
 
 fn _assemble(self: *Self) !void {
     errdefer {
-        const ub = @min(self.pos+20, self.source.len);
-        const snippet = self.arena.dupe(u8, self.source[self.pos..ub]) 
-            catch self.source[self.pos..ub];
+        const ub = @min(self.pos + 20, self.source.len);
+        const snippet = self.arena.dupe(u8, self.source[self.pos..ub]) catch self.source[self.pos..ub];
         std.mem.replaceScalar(u8, snippet, '\n', ' ');
-        std.debug.print("Encountered error at position = {d}/{d}: ```{s}...```\n", .{self.pos, self.source.len, snippet});
+        std.debug.print("Encountered error at position = {d}/{d}: ```{s}...```\n", .{ self.pos, self.source.len, snippet });
     }
 
     while (self.pos < self.source.len) {
@@ -247,7 +265,7 @@ fn _assemble(self: *Self) !void {
         if (self.tryExpectChar('(')) {
             var found_lb = false;
             while (self.tryConsumeChar()) |rb| {
-                if (rb == ')') { 
+                if (rb == ')') {
                     found_lb = true;
                     break;
                 }
@@ -265,7 +283,9 @@ fn _assemble(self: *Self) !void {
                 4 => {
                     try self.writeShort(num);
                 },
-                else => {return AssemblerError.InvalidNumberLiteral;},
+                else => {
+                    return AssemblerError.InvalidNumberLiteral;
+                },
             }
         } else if (self.tryExpectCharClass(WS)) |ws| {
             _ = ws;
@@ -275,13 +295,15 @@ fn _assemble(self: *Self) !void {
             if (self.tryConsumeNumber()) |num| {
                 addr = num;
             } else {
-                const label = try self.consumeAddressingLabel(); 
-                addr = try self.getLabelAddr(label) orelse 
+                const label = try self.consumeAddressingLabel();
+                addr = try self.getLabelAddr(label) orelse
                     return AssemblerError.InvalidNumberOrLabel;
             }
             switch (lt) {
-                '|' => { self.gen_ptr = addr; },
-                '$' => { 
+                '|' => {
+                    self.gen_ptr = addr;
+                },
+                '$' => {
                     if (self.gen_ptr > 0xFF) {
                         // NOTE: in the original implementation, relative padding runes
                         //      add the the end of a file do not emit bytes.
@@ -290,24 +312,26 @@ fn _assemble(self: *Self) !void {
                         self.gen_ptr += addr;
                     }
                 },
-                else => { return AssemblerError.InvalidLabelType;}
+                else => {
+                    return AssemblerError.InvalidLabelType;
+                },
             }
-        // } else if (self.tryExpectChar('$')) {
-        //     // TODO: add label
-        //     var rel_addr: u16 = undefined;
-        //     if (self.tryConsumeNumber()) |num| {
-        //         rel_addr = num;
-        //     } else {
-        //         return AssemblerError.InvalidNumberOrLabel;
-        //     }
-        //     self.gen_ptr += rel_addr;
+            // } else if (self.tryExpectChar('$')) {
+            //     // TODO: add label
+            //     var rel_addr: u16 = undefined;
+            //     if (self.tryConsumeNumber()) |num| {
+            //         rel_addr = num;
+            //     } else {
+            //         return AssemblerError.InvalidNumberOrLabel;
+            //     }
+            //     self.gen_ptr += rel_addr;
         } else if (self.tryExpectCharClass("@&")) |c| {
             var label = try self.consumeLabel();
             const is_lambda = std.mem.startsWith(u8, label, "lambda");
             if (c == '@' and !is_lambda) {
                 self.context = getUpTo(label, "/");
             } else if (!is_lambda) {
-                const slices = [3][]const u8{self.context, "/", label};
+                const slices = [3][]const u8{ self.context, "/", label };
                 label = try std.mem.concat(self.arena, u8, &slices);
             }
             try self.labels.put(label, @intCast(self.gen_ptr));
@@ -322,7 +346,9 @@ fn _assemble(self: *Self) !void {
                 const instByte = switch (jt) {
                     '!' => uxn.JMI,
                     '?' => uxn.JCI,
-                    else => {return AssemblerError.InvalidImmediateJumpType;}
+                    else => {
+                        return AssemblerError.InvalidImmediateJumpType;
+                    },
                 };
                 try self.writeByte(instByte);
 
@@ -337,8 +363,7 @@ fn _assemble(self: *Self) !void {
                 self.gen_ptr += 3;
             }
         } else if (self.tryExpectChar('#')) {
-            const literal = self.tryConsumeNumber() 
-                orelse return AssemblerError.InvalidNumberLiteral;
+            const literal = self.tryConsumeNumber() orelse return AssemblerError.InvalidNumberLiteral;
             switch (self.pos - starting_pos - 1) {
                 2 => {
                     try self.writeByte(uxn.LIT);
@@ -348,7 +373,9 @@ fn _assemble(self: *Self) !void {
                     try self.writeByte(uxn.LIT2);
                     try self.writeShort(literal);
                 },
-                else => {return AssemblerError.InvalidNumberLiteral;},
+                else => {
+                    return AssemblerError.InvalidNumberLiteral;
+                },
             }
         } else if (self.tryExpectCharClass("[]")) |b| {
             _ = b;
@@ -386,8 +413,12 @@ fn writeShort(self: *Self, short: u16) !void {
 }
 
 fn writeByte(self: *Self, byte: u8) !void {
-    if (self.gen_ptr < 0x100) {return AssemblerError.ZeroPageWrite;}
-    if (self.gen_ptr >= self.program.len) {return AssemblerError.OverflowMemory;}
+    if (self.gen_ptr < 0x100) {
+        return AssemblerError.ZeroPageWrite;
+    }
+    if (self.gen_ptr >= self.program.len) {
+        return AssemblerError.OverflowMemory;
+    }
     self.max_gen_ptr = @max(self.gen_ptr, self.max_gen_ptr);
     self.program[self.gen_ptr] = byte;
     self.gen_ptr += 1;
@@ -405,46 +436,58 @@ fn tryConsumeInstruction(self: *Self) ?u8 {
 
     // Special-case: BRK and the immediate-mode opcodes that live in the BRK slot.
     // These must be checked before the generic LIT path.
-    if (sw(haystack, "JSI"))  { self.pos += 3; return uxn.JSI;  }
-    if (sw(haystack, "JMI"))  { self.pos += 3; return uxn.JMI;  }
-    if (sw(haystack, "JCI"))  { self.pos += 3; return uxn.JCI;  }
-    if (sw(haystack, "BRK"))  { self.pos += 3; return uxn.BRK;  }
+    if (sw(haystack, "JSI")) {
+        self.pos += 3;
+        return uxn.JSI;
+    }
+    if (sw(haystack, "JMI")) {
+        self.pos += 3;
+        return uxn.JMI;
+    }
+    if (sw(haystack, "JCI")) {
+        self.pos += 3;
+        return uxn.JCI;
+    }
+    if (sw(haystack, "BRK")) {
+        self.pos += 3;
+        return uxn.BRK;
+    }
 
     // Base opcode table (all 32 "normal" opcodes).
     const Entry = struct { name: []const u8, base: uxn.Instruction };
     const opcodes = [_]Entry{
-        .{ .name = "LIT", .base = .{.opcode = .BRK, .keep_mode = 1}},
-        .{ .name = "INC", .base = .{.opcode = .INC}},
-        .{ .name = "POP", .base = .{.opcode = .POP}},
-        .{ .name = "NIP", .base = .{.opcode = .NIP}},
-        .{ .name = "SWP", .base = .{.opcode = .SWP}},
-        .{ .name = "ROT", .base = .{.opcode = .ROT}},
-        .{ .name = "DUP", .base = .{.opcode = .DUP}},
-        .{ .name = "OVR", .base = .{.opcode = .OVR}},
-        .{ .name = "EQU", .base = .{.opcode = .EQU}},
-        .{ .name = "NEQ", .base = .{.opcode = .NEQ}},
-        .{ .name = "GTH", .base = .{.opcode = .GTH}},
-        .{ .name = "LTH", .base = .{.opcode = .LTH}},
-        .{ .name = "JMP", .base = .{.opcode = .JMP}},
-        .{ .name = "JCN", .base = .{.opcode = .JCN}},
-        .{ .name = "JSR", .base = .{.opcode = .JSR}},
-        .{ .name = "STH", .base = .{.opcode = .STH}},
-        .{ .name = "LDZ", .base = .{.opcode = .LDZ}},
-        .{ .name = "STZ", .base = .{.opcode = .STZ}},
-        .{ .name = "LDR", .base = .{.opcode = .LDR}},
-        .{ .name = "STR", .base = .{.opcode = .STR}},
-        .{ .name = "LDA", .base = .{.opcode = .LDA}},
-        .{ .name = "STA", .base = .{.opcode = .STA}},
-        .{ .name = "DEI", .base = .{.opcode = .DEI}},
-        .{ .name = "DEO", .base = .{.opcode = .DEO}},
-        .{ .name = "ADD", .base = .{.opcode = .ADD}},
-        .{ .name = "SUB", .base = .{.opcode = .SUB}},
-        .{ .name = "MUL", .base = .{.opcode = .MUL}},
-        .{ .name = "DIV", .base = .{.opcode = .DIV}},
-        .{ .name = "AND", .base = .{.opcode = .AND}},
-        .{ .name = "ORA", .base = .{.opcode = .ORA}},
-        .{ .name = "EOR", .base = .{.opcode = .EOR}},
-        .{ .name = "SFT", .base = .{.opcode = .SFT}},
+        .{ .name = "LIT", .base = .{ .opcode = .BRK, .keep_mode = 1 } },
+        .{ .name = "INC", .base = .{ .opcode = .INC } },
+        .{ .name = "POP", .base = .{ .opcode = .POP } },
+        .{ .name = "NIP", .base = .{ .opcode = .NIP } },
+        .{ .name = "SWP", .base = .{ .opcode = .SWP } },
+        .{ .name = "ROT", .base = .{ .opcode = .ROT } },
+        .{ .name = "DUP", .base = .{ .opcode = .DUP } },
+        .{ .name = "OVR", .base = .{ .opcode = .OVR } },
+        .{ .name = "EQU", .base = .{ .opcode = .EQU } },
+        .{ .name = "NEQ", .base = .{ .opcode = .NEQ } },
+        .{ .name = "GTH", .base = .{ .opcode = .GTH } },
+        .{ .name = "LTH", .base = .{ .opcode = .LTH } },
+        .{ .name = "JMP", .base = .{ .opcode = .JMP } },
+        .{ .name = "JCN", .base = .{ .opcode = .JCN } },
+        .{ .name = "JSR", .base = .{ .opcode = .JSR } },
+        .{ .name = "STH", .base = .{ .opcode = .STH } },
+        .{ .name = "LDZ", .base = .{ .opcode = .LDZ } },
+        .{ .name = "STZ", .base = .{ .opcode = .STZ } },
+        .{ .name = "LDR", .base = .{ .opcode = .LDR } },
+        .{ .name = "STR", .base = .{ .opcode = .STR } },
+        .{ .name = "LDA", .base = .{ .opcode = .LDA } },
+        .{ .name = "STA", .base = .{ .opcode = .STA } },
+        .{ .name = "DEI", .base = .{ .opcode = .DEI } },
+        .{ .name = "DEO", .base = .{ .opcode = .DEO } },
+        .{ .name = "ADD", .base = .{ .opcode = .ADD } },
+        .{ .name = "SUB", .base = .{ .opcode = .SUB } },
+        .{ .name = "MUL", .base = .{ .opcode = .MUL } },
+        .{ .name = "DIV", .base = .{ .opcode = .DIV } },
+        .{ .name = "AND", .base = .{ .opcode = .AND } },
+        .{ .name = "ORA", .base = .{ .opcode = .ORA } },
+        .{ .name = "EOR", .base = .{ .opcode = .EOR } },
+        .{ .name = "SFT", .base = .{ .opcode = .SFT } },
     };
 
     for (opcodes) |entry| {
@@ -457,9 +500,18 @@ fn tryConsumeInstruction(self: *Self) ?u8 {
             var i: usize = 0;
             while (i < rest.len) : (i += 1) {
                 switch (rest[i]) {
-                    '2' => { inst.short_mode = 1;  len += 1; },
-                    'r' => { inst.return_mode = 1; len += 1; },
-                    'k' => { inst.keep_mode = 1;   len += 1; },
+                    '2' => {
+                        inst.short_mode = 1;
+                        len += 1;
+                    },
+                    'r' => {
+                        inst.return_mode = 1;
+                        len += 1;
+                    },
+                    'k' => {
+                        inst.keep_mode = 1;
+                        len += 1;
+                    },
                     else => break,
                 }
             }
@@ -474,20 +526,17 @@ fn tryConsumeInstruction(self: *Self) ?u8 {
 
 fn printStringHashMap(comptime T: type, hm: std.StringHashMap(T)) void {
     var kiter = hm.iterator();
-        std.debug.print("Entries of hashmap({s}):\n", .{@typeName(T)});
+    std.debug.print("Entries of hashmap({s}):\n", .{@typeName(T)});
     while (kiter.next()) |key| {
-        std.debug.print("\t'{s}': 0x{x:0>4}\n", .{key.key_ptr.*, key.value_ptr.*});
+        std.debug.print("\t'{s}': 0x{x:0>4}\n", .{ key.key_ptr.*, key.value_ptr.* });
     }
 }
 
-
 fn evaluateAnonymousLabels(self: *Self) !void {
     const nlb = std.mem.count(u8, self.source, "{");
-    var rev_buff  = "@lambdaxxxx".*;
+    var rev_buff = "@lambdaxxxx".*;
 
-    var source = try std.ArrayList(u8).initCapacity(
-        self.arena, self.source.len + rev_buff.len * nlb
-    );
+    var source = try std.ArrayList(u8).initCapacity(self.arena, self.source.len + rev_buff.len * nlb);
 
     try source.insertSlice(self.arena, 0, self.source);
     var bracketStack = try std.ArrayList(u16).initCapacity(self.arena, nlb);
@@ -503,10 +552,7 @@ fn evaluateAnonymousLabels(self: *Self) !void {
             const lb_pos = bracketStack.pop() orelse {
                 return AssemblerError.UnmatchedRightAnonBracket;
             };
-            const label = try std.fmt.bufPrint(
-                &rev_buff,
-                "lambda{x:0>4}",
-                .{label_j});
+            const label = try std.fmt.bufPrint(&rev_buff, "lambda{x:0>4}", .{label_j});
             _ = source.orderedRemove(i);
             try source.insertSlice(self.arena, i, label);
             try source.insertSlice(self.arena, i, "@");
@@ -516,13 +562,13 @@ fn evaluateAnonymousLabels(self: *Self) !void {
             label_j += 1;
         }
     }
-    
+
     self.source = source.items;
 }
 
 // get up the character needle from the beginnging of the haystack but not including.
 // returns full string if needle is not present.
-fn getUpTo(haystack: [] u8, needle: [] const u8) []u8 {
+fn getUpTo(haystack: []u8, needle: []const u8) []u8 {
     if (std.mem.find(u8, haystack, needle)) |pos| {
         return haystack[0..pos];
     } else {
@@ -530,9 +576,9 @@ fn getUpTo(haystack: [] u8, needle: [] const u8) []u8 {
     }
 }
 
-//    v  
+//    v
 // 012345
-// 01245  
+// 01245
 // 01267845
 // 012@67845
 //

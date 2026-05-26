@@ -41,8 +41,8 @@ pub fn dei(_: *Self, vm: *uxn.VM, dev: u16, s: u1) u16 {
         .rst => {
             // vm.store(vm.ptr[1], dev, s);
             return vm.ptr[1];
-        }, 
-        else => {}
+        },
+        else => {},
     }
     const x = vm.fetch(dev, s);
     return x;
@@ -63,7 +63,7 @@ pub fn deo(self: *const Self, vm: *uxn.VM, dev: u16, value: u16, s: u1) void {
         .debug => {
             if (value != 0) debug_deo(self, vm);
         },
-        else => {}
+        else => {},
     }
     vm.store(value, dev, s);
 }
@@ -74,7 +74,7 @@ fn expansion_deo(_: *uxn.VM, _: u16) void {
 }
 
 fn debug_deo(self: *const Self, vm: *uxn.VM) void {
-    const rs = [_]usize{0, 1};
+    const rs = [_]usize{ 0, 1 };
     for (rs) |r| {
         var i: isize = @max(vm.ptr[r], 7);
         if (r == 0) {
@@ -99,8 +99,6 @@ fn debug_deo(self: *const Self, vm: *uxn.VM) void {
         self.debug_writer.print("<\n", .{}) catch {};
     }
 }
-
-
 
 test "testing dei/deo" {
     const io = std.testing.io;
@@ -130,7 +128,6 @@ test "testing dei/deo" {
     try std.testing.expectEqual(0x00, vm.ptr[1]);
 }
 
-
 test "debug print" {
     const io = std.testing.io;
     const gpa = std.testing.allocator;
@@ -144,7 +141,7 @@ test "debug print" {
     for (1..4) |i| {
         vm.push(@truncate(i), 0, 0);
     }
-    
+
     for (4..6) |i| {
         vm.push(@truncate(i), 1, 0);
     }

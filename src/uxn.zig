@@ -35,14 +35,14 @@ pub const Opcode = enum(u5) {
     SFT = 0x1f,
 };
 
-pub const LIT:   u8   = 0x80;
-pub const LIT2:  u8   = 0xa0;
-pub const LITr:  u8   = 0xc0;
-pub const LIT2r: u8   = 0xe0;
-pub const BRK:   u8   = 0x00;
-pub const JCI:   u8   = 0x20; 
-pub const JMI:   u8   = 0x40; 
-pub const JSI:   u8   = 0x60; 
+pub const LIT: u8 = 0x80;
+pub const LIT2: u8 = 0xa0;
+pub const LITr: u8 = 0xc0;
+pub const LIT2r: u8 = 0xe0;
+pub const BRK: u8 = 0x00;
+pub const JCI: u8 = 0x20;
+pub const JMI: u8 = 0x40;
+pub const JSI: u8 = 0x60;
 
 pub const RESET_VECTOR: u16 = 0x100;
 
@@ -74,56 +74,128 @@ pub const Instruction = packed struct {
         switch (self.opcode) {
             .BRK => {
                 switch (self.to_u8()) {
-                    LIT2, LIT2r, LIT, LITr => { 
-                        try writer.print("LIT", .{}); 
-                        if (self.short_mode == 1) try writer.print("2", .{}); 
-                        if (self.return_mode == 1) try writer.print("r", .{}); 
-                        try writer.print("(0x{x:0>2})", .{ self.to_u8() });
+                    LIT2, LIT2r, LIT, LITr => {
+                        try writer.print("LIT", .{});
+                        if (self.short_mode == 1) try writer.print("2", .{});
+                        if (self.return_mode == 1) try writer.print("r", .{});
+                        try writer.print("(0x{x:0>2})", .{self.to_u8()});
                         return;
                     },
-                    BRK =>  { return try writer.print("BRK(0x{X:0>2})", .{self.to_u8()});  },
-                    JCI =>  { return try writer.print("JCI(0x{X:0>2})", .{self.to_u8()}); },
-                    JMI =>  { return try writer.print("JMI(0x{X:0>2})", .{self.to_u8()}); },
-                    JSI =>  { return try writer.print("JSI(0x{X:0>2})", .{self.to_u8()}); },
-                    else => { return try writer.print("UNK(0x{X:0>2})", .{self.to_u8()}); },
+                    BRK => {
+                        return try writer.print("BRK(0x{X:0>2})", .{self.to_u8()});
+                    },
+                    JCI => {
+                        return try writer.print("JCI(0x{X:0>2})", .{self.to_u8()});
+                    },
+                    JMI => {
+                        return try writer.print("JMI(0x{X:0>2})", .{self.to_u8()});
+                    },
+                    JSI => {
+                        return try writer.print("JSI(0x{X:0>2})", .{self.to_u8()});
+                    },
+                    else => {
+                        return try writer.print("UNK(0x{X:0>2})", .{self.to_u8()});
+                    },
                 }
             },
-            .INC => { try writer.print("INC", .{}); },
-            .POP => { try writer.print("POP", .{}); },
-            .NIP => { try writer.print("NIP", .{}); },
-            .SWP => { try writer.print("SWP", .{}); },
-            .ROT => { try writer.print("ROT", .{}); },
-            .DUP => { try writer.print("DUP", .{}); },
-            .OVR => { try writer.print("OVR", .{}); },
-            .EQU => { try writer.print("EQU", .{}); },
-            .NEQ => { try writer.print("NEQ", .{}); },
-            .GTH => { try writer.print("GTH", .{}); },
-            .LTH => { try writer.print("LTH", .{}); },
-            .JMP => { try writer.print("JMP", .{}); },
-            .JCN => { try writer.print("JCN", .{}); },
-            .JSR => { try writer.print("JSR", .{}); },
-            .STH => { try writer.print("STH", .{}); },
-            .LDZ => { try writer.print("LDZ", .{}); },
-            .STZ => { try writer.print("STZ", .{}); },
-            .LDR => { try writer.print("LDR", .{}); },
-            .STR => { try writer.print("STR", .{}); },
-            .LDA => { try writer.print("LDA", .{}); },
-            .STA => { try writer.print("STA", .{}); },
-            .DEI => { try writer.print("DEI", .{}); },
-            .DEO => { try writer.print("DEO", .{}); },
-            .ADD => { try writer.print("ADD", .{}); },
-            .SUB => { try writer.print("SUB", .{}); },
-            .MUL => { try writer.print("MUL", .{}); },
-            .DIV => { try writer.print("DIV", .{}); },
-            .AND => { try writer.print("AND", .{}); },
-            .ORA => { try writer.print("ORA", .{}); },
-            .EOR => { try writer.print("EOR", .{}); },
-            .SFT => { try writer.print("SFT", .{}); },
+            .INC => {
+                try writer.print("INC", .{});
+            },
+            .POP => {
+                try writer.print("POP", .{});
+            },
+            .NIP => {
+                try writer.print("NIP", .{});
+            },
+            .SWP => {
+                try writer.print("SWP", .{});
+            },
+            .ROT => {
+                try writer.print("ROT", .{});
+            },
+            .DUP => {
+                try writer.print("DUP", .{});
+            },
+            .OVR => {
+                try writer.print("OVR", .{});
+            },
+            .EQU => {
+                try writer.print("EQU", .{});
+            },
+            .NEQ => {
+                try writer.print("NEQ", .{});
+            },
+            .GTH => {
+                try writer.print("GTH", .{});
+            },
+            .LTH => {
+                try writer.print("LTH", .{});
+            },
+            .JMP => {
+                try writer.print("JMP", .{});
+            },
+            .JCN => {
+                try writer.print("JCN", .{});
+            },
+            .JSR => {
+                try writer.print("JSR", .{});
+            },
+            .STH => {
+                try writer.print("STH", .{});
+            },
+            .LDZ => {
+                try writer.print("LDZ", .{});
+            },
+            .STZ => {
+                try writer.print("STZ", .{});
+            },
+            .LDR => {
+                try writer.print("LDR", .{});
+            },
+            .STR => {
+                try writer.print("STR", .{});
+            },
+            .LDA => {
+                try writer.print("LDA", .{});
+            },
+            .STA => {
+                try writer.print("STA", .{});
+            },
+            .DEI => {
+                try writer.print("DEI", .{});
+            },
+            .DEO => {
+                try writer.print("DEO", .{});
+            },
+            .ADD => {
+                try writer.print("ADD", .{});
+            },
+            .SUB => {
+                try writer.print("SUB", .{});
+            },
+            .MUL => {
+                try writer.print("MUL", .{});
+            },
+            .DIV => {
+                try writer.print("DIV", .{});
+            },
+            .AND => {
+                try writer.print("AND", .{});
+            },
+            .ORA => {
+                try writer.print("ORA", .{});
+            },
+            .EOR => {
+                try writer.print("EOR", .{});
+            },
+            .SFT => {
+                try writer.print("SFT", .{});
+            },
         }
-        if (self.short_mode == 1) try writer.print("2", .{}); 
-        if (self.keep_mode == 1) try writer.print("k", .{}); 
-        if (self.return_mode == 1) try writer.print("r", .{}); 
-        try writer.print("(0x{X:0>2})", .{ self.to_u8() });
+        if (self.short_mode == 1) try writer.print("2", .{});
+        if (self.keep_mode == 1) try writer.print("k", .{});
+        if (self.return_mode == 1) try writer.print("r", .{});
+        try writer.print("(0x{X:0>2})", .{self.to_u8()});
     }
 };
 
@@ -136,7 +208,7 @@ fn mword(bu: u8, bl: u8) u16 {
 
 fn rel_offset(pc: u16, offset: u8) u16 {
     // test the minus sign, which is the most significant bit.
-    const has_minus= offset & (1 << 7) != 0;
+    const has_minus = offset & (1 << 7) != 0;
     if (has_minus) {
         const rel = ~offset + 1;
         return pc - rel;
@@ -153,9 +225,7 @@ pub fn jump(pc: u16, addr: u16, s: u1) u16 {
     }
 }
 
-
-
-const VMError= error {
+const VMError = error{
     ROMTooLarge,
 };
 
@@ -171,8 +241,8 @@ pub const VM = struct {
         for (0..ram.len) |i| ram[i] = 0;
 
         return .{
-            .ptr = .{0, 0},
-            .stk = .{std.mem.zeroes(Stack), std.mem.zeroes(Stack)},
+            .ptr = .{ 0, 0 },
+            .stk = .{ std.mem.zeroes(Stack), std.mem.zeroes(Stack) },
             .ram = ram,
         };
     }
@@ -189,7 +259,9 @@ pub const VM = struct {
     }
 
     pub fn pop(self: *Self, k: u1, r: u1, s: u1) u16 {
-        if (self.ptr[r] <= s) { return 0; }
+        if (self.ptr[r] <= s) {
+            return 0;
+        }
         var out: u16 = self.stk[r][self.ptr[r] - 1];
         if (s == 1) {
             out |= @as(u16, self.stk[r][self.ptr[r] - 2]) << 8;
@@ -199,7 +271,7 @@ pub const VM = struct {
     }
 
     pub fn push(self: *Self, x: u16, r: u1, s: u1) void {
-        if (s==1) {
+        if (s == 1) {
             self.stk[r][self.ptr[r]] = @truncate((x >> 8) & 0xFF);
             self.ptr[r] += 1;
         }
@@ -251,12 +323,12 @@ pub const VM = struct {
                             pc +%= 1;
                             pc +%= s;
                         },
-                        BRK => { 
+                        BRK => {
                             return;
                         },
                         JCI => {
                             // TODO: test JCI
-                            const b= vm.pop(k, r, 0);
+                            const b = vm.pop(k, r, 0);
                             if (b != 0) {
                                 const x = vm.fetch(pc, 1);
                                 pc +%= x;
@@ -274,7 +346,9 @@ pub const VM = struct {
                             pc +%= rel;
                             pc +%= 2;
                         },
-                        else => { unreachable; },
+                        else => {
+                            unreachable;
+                        },
                     }
                 },
                 .INC => {
@@ -295,7 +369,7 @@ pub const VM = struct {
                     vm.push(y, r, s);
                     vm.push(x, r, s);
                 },
-                .ROT => { 
+                .ROT => {
                     // x y z -> y z x
                     const z = vm.pop(k, r, s);
                     const y = vm.pop(k, r, s);
@@ -311,8 +385,8 @@ pub const VM = struct {
                 },
                 .OVR => {
                     // TODO: test OVR
-                    const y = vm.pop(k,r, s);
-                    const x = vm.pop(k,r, s);
+                    const y = vm.pop(k, r, s);
+                    const x = vm.pop(k, r, s);
                     vm.push(x, r, s);
                     vm.push(y, r, s);
                     vm.push(x, r, s);
@@ -350,7 +424,7 @@ pub const VM = struct {
                     //TODO: test JCN
                     const x = vm.pop(k, r, s);
                     const b = vm.pop(k, r, 0);
-                    if ( b != 0 ) pc = jump(pc, x, s);
+                    if (b != 0) pc = jump(pc, x, s);
                 },
                 .JSR => {
                     //TODO: test JSR
@@ -431,7 +505,7 @@ pub const VM = struct {
                 .DIV => {
                     const y = vm.pop(k, r, s);
                     const x = vm.pop(k, r, s);
-                    vm.push(if (y==0) 0 else x/y, r, s);
+                    vm.push(if (y == 0) 0 else x / y, r, s);
                 },
                 .AND => {
                     const y = vm.pop(k, r, s);
@@ -458,15 +532,13 @@ pub const VM = struct {
                 },
             }
         }
-
-
     }
 };
 
-pub const Device= struct {
+pub const Device = struct {
     const Self = @This();
 
-    ptr:    *anyopaque,
+    ptr: *anyopaque,
     vtable: *const VTable,
 
     pub const VTable = struct {
@@ -485,10 +557,7 @@ pub const Device= struct {
                 const self: T = @ptrCast(@alignCast(ctx));
                 return self.deo(vm, addr, x, s);
             }
-            const vtable = VTable{ 
-                .dei = deiFn,
-                .deo = deoFn 
-            };
+            const vtable = VTable{ .dei = deiFn, .deo = deoFn };
         };
         return .{ .ptr = ptr, .vtable = &gen.vtable };
     }
@@ -505,15 +574,16 @@ pub const Device= struct {
 };
 
 const DummyDevice = struct {
-    pub fn dei(_: *@This(), _: *VM, _: u8, _: u1) u16 { return 0; }
+    pub fn dei(_: *@This(), _: *VM, _: u8, _: u1) u16 {
+        return 0;
+    }
     pub fn deo(_: *@This(), _: *VM, _: u8, _: u16, _: u1) void {}
 };
 
-
 test "SWP" {
-    const swp: Instruction = .{.opcode = .SWP};
-    const swp2: Instruction = .{.opcode = .SWP, .short_mode = 1};
-    const test_program = [_]u8 {
+    const swp: Instruction = .{ .opcode = .SWP };
+    const swp2: Instruction = .{ .opcode = .SWP, .short_mode = 1 };
+    const test_program = [_]u8{
         LIT2,
         0x12,
         0x34,
@@ -530,13 +600,13 @@ test "SWP" {
     try vm.load_rom(&test_program);
     var dd: DummyDevice = .{};
     vm.eval(RESET_VECTOR, Device.init(&dd));
-    try std.testing.expectEqualSlices(u8, &[_]u8{0x78, 0x56, 0x12, 0x34}, vm.stk[0][0..4]);
+    try std.testing.expectEqualSlices(u8, &[_]u8{ 0x78, 0x56, 0x12, 0x34 }, vm.stk[0][0..4]);
     try std.testing.expectEqual(4, vm.ptr[0]);
 }
 
 test "NIP" {
-    const nip: Instruction = .{.opcode = .NIP};
-    const test_program = [_]u8 {
+    const nip: Instruction = .{ .opcode = .NIP };
+    const test_program = [_]u8{
         LIT2,
         0x12,
         0x34,
@@ -555,8 +625,7 @@ test "NIP" {
 }
 
 test "test LIT2 and POP2" {
-
-    const test_program = [_]u8 {
+    const test_program = [_]u8{
         LIT2,
         0x12,
         0x34,
@@ -575,7 +644,7 @@ test "test LIT2 and POP2" {
     // try std.testing.expectEqual(5, vm.peekw());
     try std.testing.expectEqual(4, vm.ptr[0]);
 
-    const expected_ws = &[4]u8{0x12, 0x34, 0x56, 0x78};
+    const expected_ws = &[4]u8{ 0x12, 0x34, 0x56, 0x78 };
     try std.testing.expectEqualSlices(u8, expected_ws, vm.stk[0][0..4]);
 
     try std.testing.expectEqual(0x5678, vm.pop(1, 0, 1));
@@ -586,10 +655,9 @@ test "test LIT2 and POP2" {
     try std.testing.expectEqual(0x1234, vm.pop(0, 0, 1));
 }
 
-
 test "ROT" {
     const rot: Instruction = .{ .opcode = .ROT };
-    const test_program = [_]u8 {
+    const test_program = [_]u8{
         LIT2,
         0x01,
         0x02, // 1 2
@@ -605,16 +673,18 @@ test "ROT" {
     vm.eval(RESET_VECTOR, Device.init(&dd));
 
     try std.testing.expectEqual(3, vm.ptr[0]);
-    try std.testing.expectEqualSlices(u8, 
-        &[_]u8{2, 3, 1,}, vm.stk[0][0..vm.ptr[0]]
-    );
+    try std.testing.expectEqualSlices(u8, &[_]u8{
+        2,
+        3,
+        1,
+    }, vm.stk[0][0..vm.ptr[0]]);
 }
 
 test "DUP" {
     const dup: Instruction = .{ .opcode = .DUP };
     const dupk: Instruction = .{ .opcode = .DUP, .keep_mode = 1 };
     const dup2: Instruction = .{ .opcode = .DUP, .short_mode = 1 };
-    const test_program = [_]u8 {
+    const test_program = [_]u8{
         LIT,
         0x01,
         dup.to_u8(),
@@ -634,13 +704,17 @@ test "DUP" {
 }
 
 test "test program INC five times, starting from 0x00" {
-    const _inc: Instruction = .{.opcode = .INC};
+    const _inc: Instruction = .{ .opcode = .INC };
     const inc = _inc.to_u8();
 
-    const test_program = [_]u8 {
+    const test_program = [_]u8{
         LIT,
         0x00,
-        inc, inc, inc, inc, inc,
+        inc,
+        inc,
+        inc,
+        inc,
+        inc,
         BRK,
     };
 
@@ -655,10 +729,10 @@ test "test program INC five times, starting from 0x00" {
 }
 
 test "test program to find 1 + 2 = 3" {
-    const add: Instruction = .{.opcode = .ADD};
+    const add: Instruction = .{ .opcode = .ADD };
 
     // 1 + 2
-    const test_program = [_]u8 {
+    const test_program = [_]u8{
         LIT,
         0x01,
         LIT,
@@ -682,24 +756,25 @@ test "init CPU" {
     defer vm.deinit(std.testing.allocator);
     var not_okay = false;
 
-    for (vm.ram) |memory| {not_okay |= memory != 0;}
+    for (vm.ram) |memory| {
+        not_okay |= memory != 0;
+    }
     try std.testing.expect(!not_okay);
 
-    for (vm.stk[1]) |memory| {not_okay |= memory != 0;}
+    for (vm.stk[1]) |memory| {
+        not_okay |= memory != 0;
+    }
     try std.testing.expect(!not_okay);
 
-    for (vm.stk[0]) |memory| {not_okay |= memory != 0;}
+    for (vm.stk[0]) |memory| {
+        not_okay |= memory != 0;
+    }
     try std.testing.expect(!not_okay);
 }
 
 test "check 0x37 = DEO2" {
     const deo2: u8 = 0x37;
-    const inst: Instruction = .{
-        .keep_mode = 0,
-        .return_mode = 0,
-        .short_mode = 1,
-        .opcode = .DEO 
-    };
+    const inst: Instruction = .{ .keep_mode = 0, .return_mode = 0, .short_mode = 1, .opcode = .DEO };
     try std.testing.expectEqual(inst.opcode, Opcode.DEO);
     try std.testing.expectEqual(inst.short_mode, 1);
     try std.testing.expectEqual(inst.return_mode, 0);
@@ -730,7 +805,7 @@ test "check 0xb8 = JMPrk" {
 test "mem fetching" {
     var vm = try VM.init(std.testing.allocator);
     defer vm.deinit(std.testing.allocator);
-    const values = [_]u8{1,2,3,4,5};
+    const values = [_]u8{ 1, 2, 3, 4, 5 };
     for (values) |value| {
         vm.store(value, 0x00 + value, 0);
     }
@@ -743,18 +818,17 @@ test "mem fetching" {
     @memset(vm.ram, 0);
 
     for (values) |value| {
-        vm.store(value, 0x00 + 2*value, 1);
+        vm.store(value, 0x00 + 2 * value, 1);
     }
 
     for (values) |value| {
-        const fetched = vm.fetch(0x00 + 2*value + 1, 0);
+        const fetched = vm.fetch(0x00 + 2 * value + 1, 0);
         try std.testing.expectEqual(value, fetched);
     }
 }
 
-
 test "testing rel_offset for various values positive and negative" {
-    const i8_offests = [_]i8{-5, -100, 0, 1, -69, 50};
+    const i8_offests = [_]i8{ -5, -100, 0, 1, -69, 50 };
     const base: u16 = 0x0420;
     const i32_base: i32 = @intCast(base);
 
