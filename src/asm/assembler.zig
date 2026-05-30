@@ -256,14 +256,14 @@ fn resolveMacros(self: *Self, pre_macro_tokens: []Lexer.Token) ![]Lexer.Token {
     try tokens.appendSlice(self.arena, pre_macro_tokens);
 
     var i: usize = 0;
-    while (i < tokens.items.len) : (i += 1) {
+    while (i < tokens.items.len) {
         const token = tokens.items[i];
         switch (token) {
             .macro_label => |macro_label| {
                 if (macros.contains(macro_label))
                     return AssemblerError.DuplicateLabel;
 
-                const macro_i = i;
+                const starting_i = i;
                 var maybe_lb_i: ?usize = null;
                 var maybe_rb_i: ?usize = null;
 
@@ -300,16 +300,18 @@ fn resolveMacros(self: *Self, pre_macro_tokens: []Lexer.Token) ![]Lexer.Token {
                 try macros.put(macro_label, macro_tokens);
                 try tokens.replaceRange(
                     self.arena,
-                    macro_i,
-                    i - macro_i + 1,
+                    starting_i,
+                    i - starting_i + 1,
                     &[0]Lexer.Token{});
 
-                i = macro_i - 1;
+                i = starting_i;
             },
+
             .identifier => |identifier| {
-                // TODO: check if op/number code
-                if (!macros.contains(identifier))
+                if (!macros.contains(identifier)) {
+                    i += 1;
                     continue;
+                }
 
                 try tokens.replaceRange(
                     self.arena,
@@ -317,7 +319,7 @@ fn resolveMacros(self: *Self, pre_macro_tokens: []Lexer.Token) ![]Lexer.Token {
                     1,
                     macros.get(identifier).?);
                 },
-                else => {},
+                else => i += 1,
         }
     }
     return tokens.items;
@@ -497,14 +499,14 @@ pub fn assemble(self: *Self) !void {
                 try self.labels.put(label, @truncate(self.gen_ptr));
             },
             .identifier => |identifier| {
-                if (tryParseLiteral(identifier)) |num| {
+                if (tryParseInstruction(identifier)) |instByte| {
+                    try self.writeByte(instByte);
+                } else if (tryParseLiteral(identifier)) |num| {
                     switch (identifier.len) {
                         2 => try self.writeByte(@truncate(num)),
                         4 => try self.writeShort(num),
                         else => unreachable
                     }
-                } else if (tryParseInstruction(identifier)) |instByte| {
-                    try self.writeByte(instByte);
                 } else {
                     try self.writeByte(uxn.JSI);
 
