@@ -2,64 +2,49 @@ const std = @import("std");
 const uxn = @import("uxn");
 const Lexer = @import("lexer.zig");
 
-
-// +----------------------+----------------------+----------------------+----------------------+
-// | Padding Runes        | Number Rune          | Label Runes          | Ascii Runes          |
-// +----------------------+----------------------+----------------------+----------------------+
-// | | absolute           | # literal number     | @ parent             | " raw string         |
-// | $ relative           |                      | & child              |                      |
-// +----------------------+----------------------+----------------------+----------------------+
-// | Addressing Runes     | Wrapping Runes       | Immediate Runes      | Pre-processor Runes  |
-// +----------------------+----------------------+----------------------+----------------------+
-// | , literal relative   | () comment           | ! jmi                | %\{} macro           |
-// | . literal zero-page  | {} anonymous         | ? jci                |                      |
-// | ; literal absolute   | [] ignored           |                      |                      |
-// | _ = raw relative     |                      |                      |                      |
-// | - = raw zero-page    |                      |                      |                      |
-// | = = raw absolute     |                      |                      |                      |
-// +----------------------+----------------------+----------------------+----------------------+
-
-
 source: []u8,
-    pos: usize = 0,
-    gen_ptr: usize = 0,
-    program: []u8,
-    max_gen_ptr: usize = 0,
-    // second_pass: bool = false,
-    labels: std.StringHashMap(u16),
-    unresolved_labels: std.ArrayList(UnresolvedLabel),
-    context: []const u8 = DEFAULT_CONTEXT,
-    arena: std.mem.Allocator,
+pos: usize = 0,
+gen_ptr: usize = 0,
+max_gen_ptr: usize = 0,
+anon_id: u16 = 0,
+program: []u8,
+// second_pass: bool = false,
+labels: std.StringHashMap(u16),
+unresolved_labels: std.ArrayList(UnresolvedLabel),
+anon_id_stack: std.ArrayList(u16),
+context: []const u8 = DEFAULT_CONTEXT,
+arena: std.mem.Allocator,
 
-    const Self = @This();
+const Self = @This();
 
-    const WS = "\t\n\x0B\x0C\r ";
-    const HEX = "0123456789abcdefABCDEF";
-    const DEFAULT_CONTEXT = "Top";
+const WS = "\t\n\x0B\x0C\r ";
+const HEX = "0123456789abcdefABCDEF";
+const DEFAULT_CONTEXT = "Top";
 
-    const AssemblerError = error{
-        UnresolvedMacro,
-        NoMacroBrackets,
-        UnmatchedLeftMacroBracket,
-        UnmatchedRightMacroBracket,
-        DuplicateLabel,
-        InvalidDefLabel,
-        InvalidAddressingType,
-        InvalidImmediateJumpType,
-        InvalidLabel,
-        InvalidLabelType,
-        InvalidName,
-        InvalidNumberLiteral,
-        InvalidNumberOrLabel,
-        MissingLabel,
-        NoRightCommentBracket,
-        OverflowMemory,
-        RelativeAddresOverFlow,
-        UnknownInput,
-        UnmatchedRightAnonBracket,
-        ZeroLengthLabel,
-        ZeroPageWrite,
-    };
+const AssemblerError = error{
+    UnmatchedLeftAnonBracket,
+    UnresolvedMacro,
+    NoMacroBrackets,
+    UnmatchedLeftMacroBracket,
+    UnmatchedRightMacroBracket,
+    DuplicateLabel,
+    InvalidDefLabel,
+    InvalidAddressingType,
+    InvalidImmediateJumpType,
+    InvalidLabel,
+    InvalidLabelType,
+    InvalidName,
+    InvalidNumberLiteral,
+    InvalidNumberOrLabel,
+    MissingLabel,
+    NoRightCommentBracket,
+    OverflowMemory,
+    RelativeAddresOverFlow,
+    UnknownInput,
+    UnmatchedRightAnonBracket,
+    ZeroLengthLabel,
+    ZeroPageWrite,
+};
 
 const UnresolvedLabel = struct {
     ultype: UnresolvedLabelType,
@@ -106,7 +91,6 @@ const AddrOrLabel = union(enum) {
 };
 
 fn parseLabelOrAddress(self: *Self, toparse: []const u8) !AddrOrLabel {
-    // if (maybe_addr) |addr| return .{ .addr = addr };
     if (tryIntParse(u16, toparse, 16)) |addr| {
         return .{ .addr = addr };
     }
@@ -576,15 +560,15 @@ test "tokenizer general test" {
     try std.testing.expectEqual(0x19, assembler.labels.get("Console/error").?);
 
 
-    const nrows = try std.math.divCeil(usize, test_rom.len, 10);
-    for (0..nrows) |row| {
-        for (0..10) |col| {
-            const i = row * 10 + col;
-            if (i >= test_rom.len) break;
-            std.debug.print("{X:0>2} ", .{test_rom[i]});
-        }
-        std.debug.print("\n", .{});
-    }
+    // const nrows = try std.math.divCeil(usize, test_rom.len, 10);
+    // for (0..nrows) |row| {
+    //     for (0..10) |col| {
+    //         const i = row * 10 + col;
+    //         if (i >= test_rom.len) break;
+    //         std.debug.print("{X:0>2} ", .{test_rom[i]});
+    //     }
+    //     std.debug.print("\n", .{});
+    // }
 
     try std.testing.expectEqual(uxn.LIT2, test_rom[0x00]);
     try std.testing.expectEqualSlices(u8, &[2]u8{0x01, 0x13}, test_rom[1..2+1]);
