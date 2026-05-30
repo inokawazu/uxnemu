@@ -86,6 +86,28 @@ pub fn build(b: *std.Build) void {
         });
         test_step.dependOn(&b.addRunArtifact(t).step);
     }
+
+
+    // devices test files — each gets its own test artifact so tests in
+    // sibling files (imported via relative paths) actually run
+    const assembler_test_files = [_][]const u8{
+        "src/asm/assembler.zig",
+        "src/asm/lexer.zig",
+    };
+
+    for (assembler_test_files) |path| {
+        const t = b.addTest(.{
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(path),
+                .target = target,
+                .imports = &.{
+                    .{ .name = "uxn", .module = uxn },
+                },
+            }),
+        });
+        test_step.dependOn(&b.addRunArtifact(t).step);
+    }
+
 }
 
 fn addExeToBuild(b: *std.Build, exe: *std.Build.Step.Compile, name: []const u8, description: []const u8) void {
