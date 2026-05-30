@@ -1,46 +1,86 @@
 const std = @import("std");
 const uxn = @import("uxn");
+const Lexer = @import("lexer.zig");
+
+
+// +----------------------+----------------------+----------------------+----------------------+
+// | Padding Runes        | Number Rune          | Label Runes          | Ascii Runes          |
+// +----------------------+----------------------+----------------------+----------------------+
+// | | absolute           | # literal number     | @ parent             | " raw string         |
+// | $ relative           |                      | & child              |                      |
+// +----------------------+----------------------+----------------------+----------------------+
+// | Addressing Runes     | Wrapping Runes       | Immediate Runes      | Pre-processor Runes  |
+// +----------------------+----------------------+----------------------+----------------------+
+// | , literal relative   | () comment           | ! jmi                | %\{} macro           |
+// | . literal zero-page  | {} anonymous         | ? jci                |                      |
+// | ; literal absolute   | [] ignored           |                      |                      |
+// | _ = raw relative     |                      |                      |                      |
+// | - = raw zero-page    |                      |                      |                      |
+// | = = raw absolute     |                      |                      |                      |
+// +----------------------+----------------------+----------------------+----------------------+
+
 
 source: []u8,
-pos: usize = 0,
-gen_ptr: usize = 0,
-program: []u8,
-max_gen_ptr: usize = 0,
-second_pass: bool = false,
-labels: std.StringHashMap(u16),
-// unresolved_labels: std.AutoHashMap(usize, UnresolvedLabel),
-context: []const u8 = DEFAULT_CONTEXT,
-// gpa: std.mem.Allocator,
-arena: std.mem.Allocator,
+    pos: usize = 0,
+    gen_ptr: usize = 0,
+    program: []u8,
+    max_gen_ptr: usize = 0,
+    // second_pass: bool = false,
+    labels: std.StringHashMap(u16),
+    unresolved_labels: std.ArrayList(UnresolvedLabel),
+    context: []const u8 = DEFAULT_CONTEXT,
+    arena: std.mem.Allocator,
 
-const Self = @This();
+    const Self = @This();
 
-const WS = "\t\n\x0B\x0C\r ";
-const HEX = "0123456789abcdefABCDEF";
-const DEFAULT_CONTEXT = "Top";
-const NON_LABEL_START_RUNES = "|$@&,_.-;=!?#\"{}~()[]%";
+    const WS = "\t\n\x0B\x0C\r ";
+    const HEX = "0123456789abcdefABCDEF";
+    const DEFAULT_CONTEXT = "Top";
 
-const AssemblerError = error{
-    InvalidAddressingType,
-    InvalidImmediateJumpType,
-    InvalidLabel,
-    InvalidLabelType,
-    InvalidName,
-    InvalidNumberLiteral,
-    InvalidNumberOrLabel,
-    MissingLabel,
-    NoRightCommentBracket,
-    OverflowMemory,
-    RelativeAddresOverFlow,
-    UnknownInput,
-    UnmatchedRightAnonBracket,
-    ZeroPageWrite,
+    const AssemblerError = error{
+        UnresolvedMacro,
+        NoMacroBrackets,
+        UnmatchedLeftMacroBracket,
+        UnmatchedRightMacroBracket,
+        DuplicateLabel,
+        InvalidDefLabel,
+        InvalidAddressingType,
+        InvalidImmediateJumpType,
+        InvalidLabel,
+        InvalidLabelType,
+        InvalidName,
+        InvalidNumberLiteral,
+        InvalidNumberOrLabel,
+        MissingLabel,
+        NoRightCommentBracket,
+        OverflowMemory,
+        RelativeAddresOverFlow,
+        UnknownInput,
+        UnmatchedRightAnonBracket,
+        ZeroLengthLabel,
+        ZeroPageWrite,
+    };
+
+const UnresolvedLabel = struct {
+    ultype: UnresolvedLabelType,
+    label: []const u8,
+    gen_ptr: u16,
+};
+
+const UnresolvedLabelType = enum {
+    immediate,
+    relative,
+    absolute,
+    zero_page,
 };
 
 pub fn init(arena: std.mem.Allocator, source: []u8) !Self {
     var labels =
         std.StringHashMap(u16).init(arena);
     try labels.put(DEFAULT_CONTEXT, 0x10);
+
+    const unresolved_labels = 
+        try std.ArrayList(UnresolvedLabel).initCapacity(arena, 0);
 
     const program = try arena.alloc(u8, 0x10000);
     errdefer arena.free(program);
@@ -49,374 +89,56 @@ pub fn init(arena: std.mem.Allocator, source: []u8) !Self {
         .source = source,
         .labels = labels,
         .program = program,
+        .unresolved_labels = unresolved_labels,
     };
 }
 
-pub fn rom(self: *Self) []u8 {
-    return self.program[0x100 .. self.max_gen_ptr + 1];
+
+const NON_LABEL_START_RUNES = "|$@,_.-;=!?#\"{}~()[]%";
+
+fn tryIntParse(comptime T: type, buf: []const u8, base: u8) ?T {
+    return std.fmt.parseInt(T, buf, base) catch {return null;};
 }
 
-fn tryExpectChar(self: *Self, c: u8) bool {
-    if (self.pos < self.source.len and self.source[self.pos] == c) {
-        self.pos += 1;
-        return true;
-    } else {
-        return false;
-    }
-}
+const AddrOrLabel = union(enum) {
+    addr: u16,
+    label: []const u8,
+};
 
-fn tryExpectCharClass(self: *Self, class: []const u8) ?u8 {
-    for (class) |c| {
-        if (self.tryExpectChar(c)) return c;
-    }
-    return null;
-}
-
-fn tryConsumeChar(self: *Self) ?u8 {
-    if (self.pos < self.source.len) {
-        defer self.pos += 1;
-        return self.source[self.pos];
-    } else {
-        return null;
-    }
-}
-
-fn tryConsumeNumber(self: *Self) ?u16 {
-    const start_pos = self.pos;
-
-    while (self.tryConsumeChar()) |c| {
-        if (std.ascii.isWhitespace(c)) {
-            self.pos -= 1;
-            break;
-        }
+fn parseLabelOrAddress(self: *Self, toparse: []const u8) !AddrOrLabel {
+    // if (maybe_addr) |addr| return .{ .addr = addr };
+    if (tryIntParse(u16, toparse, 16)) |addr| {
+        return .{ .addr = addr };
     }
 
-    const token = self.source[start_pos..self.pos];
-    // std.debug.print("token '{s}'\n", .{token});
-    return std.fmt.parseInt(u16, token, 16) catch {
-        // std.debug.print("token error {s}\n", .{@errorName(err)});
-        self.pos = start_pos;
-        return null;
-    };
+    const label = try self.parseLabel(toparse);
+    return .{ .label = label };
 }
 
-fn allSlice(comptime T: type, slice: []const T, pred: fn (elem: T) bool) bool {
-    for (slice) |elem| {
-        if (!pred(elem)) return false;
+fn parseLabel(self: *Self, toparse: []const u8) ![]const u8 {
+    var label = toparse;
+
+    if (label.len == 0) {
+        return AssemblerError.ZeroLengthLabel;
     }
-    return true;
-}
 
-fn getLabelAddr(self: *Self, key: []u8) !?u16 {
-    const maybe_addr = self.labels.get(key);
-    if (self.second_pass) {
-        std.debug.print("MISSING LABEL: '{s}'\n", .{key});
-        const addr = maybe_addr orelse return AssemblerError.MissingLabel;
-        return addr;
-    }
-    return maybe_addr;
-}
-
-fn tryConsumeLabel(self: *Self) ?[]u8 {
-    return self.consumeLabel() catch null;
-}
-
-fn consumeLabel(self: *Self) ![]u8 {
-    const start_pos = self.pos;
-
-    while (self.tryConsumeChar()) |c| {
-        if (std.ascii.isWhitespace(c)) {
-            self.pos -= 1;
-            break;
-        }
-    }
-    const token = self.source[start_pos..self.pos];
-
-    // TODO: check if isOpCode
-    // TODO: add other checks
-    if (token.len == 0 or
-        allSlice(u8, token, std.ascii.isHex) or
-        std.mem.containsAtLeast(u8, NON_LABEL_START_RUNES, 1, token[0..1]))
-    {
-        std.debug.print("Invalid Name: '{s}'\n", .{token});
-        self.pos = start_pos;
+    const is_bad_start = !(label.len == 1 and label[0] == '{') 
+        and std.mem.find(u8, NON_LABEL_START_RUNES, label[0..1]) != null;
+    if (is_bad_start) {
         return AssemblerError.InvalidLabel;
     }
 
-    return token;
-}
+    const is_relative = toparse[0] == '&' or toparse[0] == '/';
 
-fn consumeAddressingLabel(self: *Self) ![]u8 {
-    var is_relative = false;
-    if (self.tryExpectCharClass("/&")) |l| {
-        _ = l;
-        is_relative = true;
-    }
-
-    var label = try self.consumeLabel();
     if (is_relative) {
-        const slices = [3][]const u8{ self.context, "/", label };
+        const slices = [3][]const u8{ self.context, "/", label[1..] };
         label = try std.mem.concat(self.arena, u8, &slices);
     }
+
     return label;
 }
 
-fn handleAddressing(self: *Self, atype: u8) !void {
-    const Placement = enum { raw, literal };
-    const Position = enum { relative, absolute, zero_page };
-    var placement: Placement = undefined;
-    var position: Position = undefined;
-    switch (atype) {
-        ',' => {
-            placement = .literal;
-            position = .relative;
-        }, // LIT
-        '.' => {
-            placement = .literal;
-            position = .zero_page;
-        }, // LIT
-        ';' => {
-            placement = .literal;
-            position = .absolute;
-        }, // LIT2 (absolute)
-        '_' => {
-            placement = .raw;
-            position = .relative;
-        }, // raw relative byte
-        '-' => {
-            placement = .raw;
-            position = .zero_page;
-        }, // raw zero-page byte
-        '=' => {
-            placement = .raw;
-            position = .absolute;
-        }, // raw absolute short
-        else => {
-            return AssemblerError.InvalidAddressingType;
-        },
-    }
-
-    const label = try self.consumeAddressingLabel();
-    const addr = try self.getLabelAddr(label) orelse {
-        if (placement == .literal) self.gen_ptr += 1;
-        switch (position) {
-            .absolute => self.gen_ptr += 2,
-            .zero_page, .relative => self.gen_ptr += 1,
-        }
-        return;
-    };
-
-    if (placement == .literal) {
-        switch (position) {
-            .relative, .zero_page => {
-                try self.writeByte(uxn.LIT);
-            },
-            .absolute => {
-                try self.writeByte(uxn.LIT2);
-            },
-        }
-    }
-
-    switch (position) {
-        .relative => {
-            var raddr: i32 = @intCast(addr);
-            raddr -= @intCast(self.gen_ptr);
-            raddr -= 2;
-            if (raddr < -128 or raddr > 127) {
-                return AssemblerError.RelativeAddresOverFlow;
-            }
-            const i8raddr: i8 = @intCast(raddr);
-            const u8raddr: u8 = @bitCast(i8raddr);
-            try self.writeByte(u8raddr);
-        },
-        .absolute => {
-            try self.writeShort(addr);
-        },
-        .zero_page => {
-            try self.writeByte(@truncate(addr));
-        },
-    }
-}
-
-pub fn assemble(self: *Self) !void {
-    try self.evaluateAnonymousLabels();
-    std.debug.print("No Anonymous Labels:\n{s}\n", .{self.source});
-    try self._assemble();
-    printStringHashMap(u16, self.labels);
-
-    self.pos = 0;
-    self.gen_ptr = 0;
-    self.second_pass = true;
-
-    try self._assemble();
-    // printStringHashMap(u16, self.labels);
-}
-
-fn _assemble(self: *Self) !void {
-    errdefer {
-        const ub = @min(self.pos + 20, self.source.len);
-        const snippet = self.arena.dupe(u8, self.source[self.pos..ub]) catch self.source[self.pos..ub];
-        std.mem.replaceScalar(u8, snippet, '\n', ' ');
-        std.debug.print("Encountered error at position = {d}/{d}: ```{s}...```\n", .{ self.pos, self.source.len, snippet });
-    }
-
-    while (self.pos < self.source.len) {
-        const starting_pos = self.pos;
-        if (self.tryExpectChar('(')) {
-            var found_lb = false;
-            while (self.tryConsumeChar()) |rb| {
-                if (rb == ')') {
-                    found_lb = true;
-                    break;
-                }
-            }
-            if (!found_lb) {
-                return AssemblerError.NoRightCommentBracket;
-            }
-        } else if (self.tryConsumeInstruction()) |data| {
-            try self.writeByte(data);
-        } else if (self.tryConsumeNumber()) |num| {
-            switch (self.pos - starting_pos) {
-                2 => {
-                    try self.writeByte(@truncate(num));
-                },
-                4 => {
-                    try self.writeShort(num);
-                },
-                else => {
-                    return AssemblerError.InvalidNumberLiteral;
-                },
-            }
-        } else if (self.tryExpectCharClass(WS)) |ws| {
-            _ = ws;
-        } else if (self.tryExpectCharClass("|$")) |lt| {
-            var addr: u16 = undefined;
-
-            if (self.tryConsumeNumber()) |num| {
-                addr = num;
-            } else {
-                const label = try self.consumeAddressingLabel();
-                addr = try self.getLabelAddr(label) orelse
-                    return AssemblerError.InvalidNumberOrLabel;
-            }
-            switch (lt) {
-                '|' => {
-                    self.gen_ptr = addr;
-                },
-                '$' => {
-                    if (self.gen_ptr > 0xFF) {
-                        // NOTE: in the original implementation, relative padding runes
-                        //      add the the end of a file do not emit bytes.
-                        for (0..addr) |_| try self.writeByte(0);
-                    } else {
-                        self.gen_ptr += addr;
-                    }
-                },
-                else => {
-                    return AssemblerError.InvalidLabelType;
-                },
-            }
-        } else if (self.tryExpectCharClass("@&")) |c| {
-            var label = try self.consumeLabel();
-            const is_lambda = std.mem.startsWith(u8, label, "lambda");
-            if (c == '@' and !is_lambda) {
-                self.context = getUpTo(label, "/");
-            } else if (!is_lambda) {
-                const slices = [3][]const u8{ self.context, "/", label };
-                label = try std.mem.concat(self.arena, u8, &slices);
-            }
-            try self.labels.put(label, @intCast(self.gen_ptr));
-        } else if (self.tryExpectCharClass(",.;_-=")) |c| {
-            try self.handleAddressing(c);
-        } else if (self.tryExpectCharClass("!?")) |jt| {
-            const label = try self.consumeAddressingLabel();
-
-            const maybe_addr = try self.getLabelAddr(label);
-            if (maybe_addr) |addr| {
-                const instByte = switch (jt) {
-                    '!' => uxn.JMI,
-                    '?' => uxn.JCI,
-                    else => {
-                        return AssemblerError.InvalidImmediateJumpType;
-                    },
-                };
-                try self.writeByte(instByte);
-
-                var raddr: u32 = addr;
-                if (raddr < self.gen_ptr + 2) {
-                    raddr += 0x10000;
-                }
-                raddr -= @intCast(self.gen_ptr);
-                raddr -= 2;
-                try self.writeShort(@truncate(raddr));
-            } else {
-                self.gen_ptr += 3;
-            }
-        } else if (self.tryExpectChar('#')) {
-            const literal = self.tryConsumeNumber() orelse return AssemblerError.InvalidNumberLiteral;
-            switch (self.pos - starting_pos - 1) {
-                2 => {
-                    try self.writeByte(uxn.LIT);
-                    try self.writeByte(@truncate(literal));
-                },
-                4 => {
-                    try self.writeByte(uxn.LIT2);
-                    try self.writeShort(literal);
-                },
-                else => {
-                    return AssemblerError.InvalidNumberLiteral;
-                },
-            }
-        } else if (self.tryExpectCharClass("[]")) |b| {
-            _ = b;
-            // do nothing
-        } else if (self.tryExpectChar('"')) {
-            while (self.tryConsumeChar()) |c| {
-                if (std.ascii.isWhitespace(c)) {
-                    break;
-                } else {
-                    try self.writeByte(c);
-                }
-            }
-        } else if (self.tryConsumeLabel()) |label| {
-            try self.writeByte(uxn.JSI);
-            if (try self.getLabelAddr(label)) |addr| {
-                var raddr: u32 = addr;
-                if (raddr < self.gen_ptr + 2) {
-                    raddr += 0x10000;
-                }
-                raddr -= @intCast(self.gen_ptr);
-                raddr -= 2;
-                try self.writeShort(@truncate(raddr));
-            } else {
-                self.gen_ptr += 2;
-            }
-        } else {
-            return AssemblerError.UnknownInput;
-        }
-    }
-}
-
-fn writeShort(self: *Self, short: u16) !void {
-    try self.writeByte(@truncate(short >> 8));
-    try self.writeByte(@truncate(short >> 0));
-}
-
-fn writeByte(self: *Self, byte: u8) !void {
-    if (self.gen_ptr < 0x100) {
-        return AssemblerError.ZeroPageWrite;
-    }
-    if (self.gen_ptr >= self.program.len) {
-        return AssemblerError.OverflowMemory;
-    }
-    self.max_gen_ptr = @max(self.gen_ptr, self.max_gen_ptr);
-    self.program[self.gen_ptr] = byte;
-    self.gen_ptr += 1;
-}
-
-fn tryConsumeInstruction(self: *Self) ?u8 {
-    const haystack = self.source[self.pos..];
-
+fn tryParseInstruction(to_parse: []const u8) ?u8 {
     // Helper: check prefix and advance pos
     const sw = struct {
         fn f(h: []const u8, needle: []const u8) bool {
@@ -424,29 +146,20 @@ fn tryConsumeInstruction(self: *Self) ?u8 {
         }
     }.f;
 
-    // Special-case: BRK and the immediate-mode opcodes that live in the BRK slot.
-    // These must be checked before the generic LIT path.
-    if (sw(haystack, "JSI")) {
-        self.pos += 3;
+    if (sw(to_parse, "JSI"))
         return uxn.JSI;
-    }
-    if (sw(haystack, "JMI")) {
-        self.pos += 3;
+    if (sw(to_parse, "JMI"))
         return uxn.JMI;
-    }
-    if (sw(haystack, "JCI")) {
-        self.pos += 3;
+    if (sw(to_parse, "JCI"))
         return uxn.JCI;
-    }
-    if (sw(haystack, "BRK")) {
-        self.pos += 3;
+    if (sw(to_parse, "BRK")) 
         return uxn.BRK;
-    }
 
     // Base opcode table (all 32 "normal" opcodes).
     const Entry = struct { name: []const u8, base: uxn.Instruction };
     const opcodes = [_]Entry{
-        .{ .name = "LIT", .base = .{ .opcode = .BRK, .keep_mode = 1 } },
+        .{ .name = "LIT", 
+            .base = .{ .opcode = .BRK, .keep_mode = 1 } },
         .{ .name = "INC", .base = .{ .opcode = .INC } },
         .{ .name = "POP", .base = .{ .opcode = .POP } },
         .{ .name = "NIP", .base = .{ .opcode = .NIP } },
@@ -481,10 +194,10 @@ fn tryConsumeInstruction(self: *Self) ?u8 {
     };
 
     for (opcodes) |entry| {
-        if (sw(haystack, entry.name)) {
+        if (sw(to_parse, entry.name)) {
             var inst = entry.base;
             var len: usize = entry.name.len;
-            const rest = haystack[len..];
+            const rest = to_parse[len..];
 
             // Mode suffixes may appear in any order: '2', 'r', 'k'
             var i: usize = 0;
@@ -506,7 +219,6 @@ fn tryConsumeInstruction(self: *Self) ?u8 {
                 }
             }
 
-            self.pos += len;
             return inst.to_u8();
         }
     }
@@ -514,51 +226,408 @@ fn tryConsumeInstruction(self: *Self) ?u8 {
     return null;
 }
 
-fn printStringHashMap(comptime T: type, hm: std.StringHashMap(T)) void {
-    var kiter = hm.iterator();
-    std.debug.print("Entries of hashmap({s}):\n", .{@typeName(T)});
-    while (kiter.next()) |key| {
-        std.debug.print("\t'{s}': 0x{x:0>4}\n", .{ key.key_ptr.*, key.value_ptr.* });
-    }
+fn parseLiteral(to_parse: []const u8) !u16 {
+    if (to_parse.len != 4 and to_parse.len != 2)
+        return AssemblerError.InvalidNumberLiteral;
+
+    return std.fmt.parseInt(u16, to_parse, 16);
 }
 
-fn evaluateAnonymousLabels(self: *Self) !void {
-    const nlb = std.mem.count(u8, self.source, "{");
-    var rev_buff = "@lambdaxxxx".*;
+fn tryParseLiteral(to_parse: []const u8) ?u16 {
+    return parseLiteral(to_parse) catch return null;
+}
 
-    var source = try std.ArrayList(u8).initCapacity(self.arena, self.source.len + rev_buff.len * nlb);
+fn parseDefLabel(to_parse: []const u8) ![]const u8 {
+    var label = to_parse;
 
-    try source.insertSlice(self.arena, 0, self.source);
-    var bracketStack = try std.ArrayList(u16).initCapacity(self.arena, nlb);
+    if (label.len == 0) {
+        return AssemblerError.ZeroLengthLabel;
+    }
+
+    if (std.mem.find(u8, NON_LABEL_START_RUNES, label[0..1])) |i| {
+        _ = i;
+        return AssemblerError.InvalidDefLabel;
+    } else if (label[0] == '&' or to_parse[0] == '/') {
+        return AssemblerError.InvalidDefLabel;
+    }
+
+    return label;
+}
+
+fn resolveMacros(self: *Self, pre_macro_tokens: []Lexer.Token) ![]Lexer.Token {
+    var macros =
+        std.StringHashMap([]Lexer.Token).init(self.arena);
+    var tokens = 
+        try std.ArrayList(Lexer.Token).initCapacity(self.arena, 0);
+    try tokens.appendSlice(self.arena, pre_macro_tokens);
 
     var i: usize = 0;
-    var label_j: u16 = 0;
+    while (i < tokens.items.len) : (i += 1) {
+        const token = tokens.items[i];
+        switch (token) {
+            .macro_label => |macro_label| {
+                if (macros.contains(macro_label))
+                    return AssemblerError.DuplicateLabel;
 
-    while (i < source.items.len) : (i += 1) {
-        const c = source.items[i];
-        if (c == '{') {
-            try bracketStack.append(self.arena, @intCast(i));
-        } else if (c == '}') {
-            const lb_pos = bracketStack.pop() orelse {
-                return AssemblerError.UnmatchedRightAnonBracket;
-            };
-            const label = try std.fmt.bufPrint(&rev_buff, "lambda{x:0>4}", .{label_j});
-            _ = source.orderedRemove(i);
-            try source.insertSlice(self.arena, i, label);
-            try source.insertSlice(self.arena, i, "@");
+                const macro_i = i;
+                var maybe_lb_i: ?usize = null;
+                var maybe_rb_i: ?usize = null;
 
-            _ = source.orderedRemove(lb_pos);
-            try source.insertSlice(self.arena, lb_pos, label);
-            label_j += 1;
+                while (i < tokens.items.len) : (i += 1) {
+                    const macro_token = tokens.items[i];
+                    switch (macro_token) {
+                        .left_curly_brace => {
+                            maybe_lb_i = i;
+                        }, 
+                        .right_curly_brace => {
+                            if (maybe_lb_i == null)
+                                return AssemblerError.UnmatchedRightMacroBracket;
+                            maybe_rb_i = i;
+                            break;
+                        },
+                        else => {}
+                    }
+                }
+
+                if (maybe_rb_i == null) {
+                    return AssemblerError.UnmatchedLeftMacroBracket;
+                }
+
+                if (maybe_lb_i == null) {
+                    return AssemblerError.NoMacroBrackets;
+                }
+
+                const macro_tokens = 
+                    try self.arena.dupe(
+                        Lexer.Token,
+                        tokens.items[maybe_lb_i.?+1..maybe_rb_i.?]
+                    );
+
+                try macros.put(macro_label, macro_tokens);
+                try tokens.replaceRange(
+                    self.arena,
+                    macro_i,
+                    i - macro_i + 1,
+                    &[0]Lexer.Token{});
+
+                i = macro_i - 1;
+            },
+            .identifier => |identifier| {
+                // TODO: check if op/number code
+                if (!macros.contains(identifier))
+                    continue;
+
+                try tokens.replaceRange(
+                    self.arena,
+                    i,
+                    1,
+                    macros.get(identifier).?);
+                },
+                else => {},
         }
     }
-
-    self.source = source.items;
+    return tokens.items;
 }
+
+
+fn resolveLabels(self: *Self) !void {
+    const prev_gen_ptr = self.gen_ptr;
+    defer self.gen_ptr = prev_gen_ptr;
+
+    for (self.unresolved_labels.items) |ulabel| {
+        const addr = self.labels.get(ulabel.label)
+            orelse return AssemblerError.MissingLabel;
+        self.gen_ptr = ulabel.gen_ptr;
+
+        switch (ulabel.ultype) {
+            .absolute => try self.writeShort(addr),
+            .relative => {
+                var raddr: i32 = @intCast(addr);
+                raddr -= @intCast(self.gen_ptr);
+                raddr -= 2;
+                if (raddr < -128 or raddr > 127)
+                    return AssemblerError.RelativeAddresOverFlow;
+
+                const i8raddr: i8 = @intCast(raddr);
+                const u8raddr: u8 = @bitCast(i8raddr);
+                try self.writeByte(u8raddr);
+            },
+            .zero_page => try self.writeByte(@truncate(addr)),
+            .immediate => {
+                var raddr: u32 = addr;
+                if (raddr < self.gen_ptr + 2) {
+                    raddr += 0x10000;
+                }
+                raddr -= @intCast(self.gen_ptr);
+                raddr -= 2;
+                try self.writeShort(@truncate(raddr));
+            },
+        }
+    }
+}
+
+pub fn assemble(self: *Self) !void {
+    var lexer: Lexer = .{ .source = self.source };
+    const pre_macro_tokens = try lexer.lex(self.arena);
+    const tokens = try self.resolveMacros(pre_macro_tokens);
+
+    var i: usize = 0;
+    while (i < tokens.len) : (i += 1) {
+        const token = tokens[i];
+        switch (token) {
+            .padding => |p| {
+                const label_or_addr = try self.parseLabelOrAddress(p.value);
+                var addr: u16 = undefined;
+                switch (label_or_addr) {
+                    .addr => |paddr| {addr = paddr;},
+                    .label => |label| {
+                        addr = self.labels.get(label) orelse {
+                            return AssemblerError.MissingLabel;
+                        };
+                    }
+                }
+                switch (p.ptype) {
+                    .absolute => {
+                        self.gen_ptr = addr;
+                    },
+                    .relative => {
+                        if (self.gen_ptr > 0xFF) {
+                            // NOTE: in the original implementation, relative padding runes
+                            //      add the the end of a file do not emit bytes.
+                            for (0..addr) |_| try self.writeByte(0);
+                        } else {
+                            self.gen_ptr += addr;
+                        }
+                    },
+                }
+            },
+            .addressing => |addressing| {
+                const label = try self.parseLabel(addressing.value);
+                // std.debug.print(
+                //     "Parsed addressing '{s}' ({any}-{any})\n",
+                //     .{label, addressing.placement, addressing.position}
+                // );
+
+                if (addressing.placement == .literal) {
+                    switch (addressing.position) {
+                        .relative, .zero_page => try self.writeByte(uxn.LIT),
+                        .absolute => try self.writeByte(uxn.LIT2) ,
+                    }
+                }
+
+                const ultype: UnresolvedLabelType = switch (addressing.position) {
+                    .relative  => .relative,
+                    .absolute =>  .absolute,
+                    .zero_page => .zero_page,
+                };
+
+                try self.unresolved_labels.append(self.arena, 
+                    .{ 
+                        .gen_ptr = @truncate(self.gen_ptr),
+                        .label = label,
+                        .ultype = ultype,
+                    }
+                );
+
+                switch (addressing.position) {
+                    .relative, .zero_page  => self.gen_ptr += 1,
+                    .absolute => self.gen_ptr += 2,
+                }
+            },
+            .comment => {
+                // do noting
+            },
+            .immediate => |immediate| {
+                switch (immediate.itype) {
+                    .absolute => try self.writeByte(uxn.JMI),
+                    .conditional => try self.writeByte(uxn.JCI),
+                }
+
+                const label = try self.parseLabel(immediate.value);
+                const ultype: UnresolvedLabelType = .immediate;
+                try self.unresolved_labels.append(self.arena, 
+                    .{ 
+                        .gen_ptr = @truncate(self.gen_ptr),
+                        .label = label,
+                        .ultype = ultype,
+                    }
+                );
+                self.gen_ptr += 2;
+
+            },
+            .label_def => |label_def| {
+                var label = try parseDefLabel(label_def.value);
+                switch (label_def.ltype) {
+                    .parent => {
+                        self.context = getUpTo(label, "/");
+                    },
+                    .child => {
+                        const slices = [3][]const u8{ self.context, "/", label };
+                        label = try std.mem.concat(self.arena, u8, &slices);
+                    }
+                }
+                if (self.labels.contains(label)) 
+                    return AssemblerError.DuplicateLabel;
+                try self.labels.put(label, @intCast(self.gen_ptr));
+            },
+            .left_curly_brace => {
+                return AssemblerError.UnknownInput;
+            },
+            .macro_label => {
+                return AssemblerError.UnresolvedMacro;
+            },
+            .number_literal => |number_literal| {
+                // std.debug.print("literal '{s}' (len: {d})\n", .{number_literal, number_literal.len});
+                const num = try parseLiteral(number_literal);
+                switch (number_literal.len) {
+                    2 => {
+                        try self.writeByte(uxn.LIT);
+                        try self.writeByte(@truncate(num));
+                    },
+                    4 => {
+                        try self.writeByte(uxn.LIT2);
+                        try self.writeShort(num);
+                    },
+                    else => unreachable
+                }
+            },
+            .raw_string => |raw_string| {
+                for (raw_string) |c| try self.writeByte(c);
+            },
+            .right_curly_brace => {
+                std.debug.print("TODO: right_curly_brace", .{});
+                unreachable;
+            },
+            .identifier => |identifier| {
+                if (tryParseLiteral(identifier)) |num| {
+                    switch (identifier.len) {
+                        2 => try self.writeByte(@truncate(num)),
+                        4 => try self.writeShort(num),
+                        else => unreachable
+                    }
+                } else if (tryParseInstruction(identifier)) |instByte| {
+                    try self.writeByte(instByte);
+                } else {
+                    try self.writeByte(uxn.JSI);
+
+                    const label = try parseLabel(self, identifier);
+                    const ultype: UnresolvedLabelType = .immediate;
+                    try self.unresolved_labels.append(self.arena, 
+                        .{ 
+                            .gen_ptr = @truncate(self.gen_ptr),
+                            .label = label,
+                            .ultype = ultype,
+                        }
+                    );
+                    self.gen_ptr += 2;
+                }
+            },
+        }
+    }
+    try self.resolveLabels();
+}
+
+pub fn rom(self: *Self) []u8 {
+    return self.program[0x100..self.max_gen_ptr+1];
+}
+
+
+test "tokenizer general test" {
+    var heap_arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer heap_arena.deinit();
+    const arena = heap_arena.allocator();
+
+    // const io = std.testing.io;
+    // const source_file = try std.Io.Dir.cwd().openFile(io, "hello.tal", .{});
+    // const stat = try source_file.stat(io);
+    // const source = try arena.alloc(u8, stat.size);
+    // _ = try source_file.readPositionalAll(io, source, 0);
+
+    var source = 
+        \\ 
+        \\ ( hello-world.tal )
+        \\ 
+        \\ |10 @Console [ &vector $2 &read $1 &pad $5 &write $1 &error $1 ]
+        \\  (some comment)                    
+        \\ 
+
+        \\ |0100 ( -> )
+        \\     ;greeting
+        \\     &loop
+        \\         LDAk .Console/write DEO
+        \\         INC2 LDAk ?&loop
+        \\     POP2
+        \\     #80 #0f DEO
+        \\ BRK
+        \\ 
+        \\ @greeting "Hello, 20 "Moon! 0a 00
+        .*;
+
+    var assembler: Self = try .init(arena, &source);
+    try assembler.assemble();
+
+    const test_rom = assembler.rom();
+
+    // try std.testing.expectEqual(expected: anytype, actual: anytype)
+    try std.testing.expectEqual(0x10, assembler.labels.get("Console/vector").?);
+    try std.testing.expectEqual(0x12, assembler.labels.get("Console/read").?);
+    try std.testing.expectEqual(0x13, assembler.labels.get("Console/pad").?);
+    try std.testing.expectEqual(0x18, assembler.labels.get("Console/write").?);
+    try std.testing.expectEqual(0x19, assembler.labels.get("Console/error").?);
+
+
+    const nrows = try std.math.divCeil(usize, test_rom.len, 10);
+    for (0..nrows) |row| {
+        for (0..10) |col| {
+            const i = row * 10 + col;
+            if (i >= test_rom.len) break;
+            std.debug.print("{X:0>2} ", .{test_rom[i]});
+        }
+        std.debug.print("\n", .{});
+    }
+
+    try std.testing.expectEqual(uxn.LIT2, test_rom[0x00]);
+    try std.testing.expectEqualSlices(u8, &[2]u8{0x01, 0x13}, test_rom[1..2+1]);
+    try std.testing.expectEqual(
+        (uxn.Instruction{ .opcode = .LDA, .keep_mode = 1 }).to_u8(),
+        test_rom[0x03],
+    );
+
+    // std.debug.print("Unresolved Labels:\n", .{});
+    // for (assembler.unresolved_labels.items) |ulabel| {
+    //     std.debug.print("{any} - '{s}' - '{any}'\n", .{ulabel.gen_ptr, ulabel.label, ulabel.ultype});
+    // }
+}
+
+fn writeShort(self: *Self, short: u16) !void {
+    try self.writeByte(@truncate(short >> 8));
+    try self.writeByte(@truncate(short >> 0));
+}
+
+fn writeByte(self: *Self, byte: u8) !void {
+    if (self.gen_ptr < 0x100) {
+        return AssemblerError.ZeroPageWrite;
+    }
+    if (self.gen_ptr >= self.program.len) {
+        return AssemblerError.OverflowMemory;
+    }
+    self.max_gen_ptr = @max(self.gen_ptr, self.max_gen_ptr);
+    self.program[self.gen_ptr] = byte;
+    self.gen_ptr += 1;
+}
+
+
+fn allSlice(comptime T: type, slice: []const T, pred: fn (elem: T) bool) bool {
+    for (slice) |elem| {
+        if (!pred(elem)) return false;
+    }
+    return true;
+}
+
 
 // get up the character needle from the beginnging of the haystack but not including.
 // returns full string if needle is not present.
-fn getUpTo(haystack: []u8, needle: []const u8) []u8 {
+fn getUpTo(haystack: []const u8, needle: []const u8) []const u8 {
     if (std.mem.find(u8, haystack, needle)) |pos| {
         return haystack[0..pos];
     } else {
