@@ -20,10 +20,10 @@ source: []u8,
 
 const Self = @This();
 
-const Token = union(enum) {
+pub const Token = union(enum) {
     padding: Padding,
     number_literal: []const u8,
-    label: Label,
+    label_def: Label,
     comment: []const u8,
     raw_string: []const u8,
     addressing: Addressing,
@@ -46,7 +46,7 @@ const PaddingType = enum {
 
 const Label = struct {
     ltype: LabelType,
-    vlaue: []const u8,
+    value: []const u8,
 };
 
 const LabelType = enum {
@@ -193,8 +193,8 @@ pub fn lex(self: *Self, arena: std.mem.Allocator) ![]Token {
             try self.expectNoWs();
             try self.expectNotEnd();
             const value = self.consumeUntilWS();
-            const label: Label = .{ .ltype = ltype, .vlaue = value };
-            try tokens.append(arena, .{ .label = label });
+            const label: Label = .{ .ltype = ltype, .value = value };
+            try tokens.append(arena, .{ .label_def = label });
         } else if (self.tryConsumeCharacterClass("(")) |_| {
             const value = try self.consumeUpto(')');
             try self.consumeChar(')');
@@ -298,9 +298,9 @@ test "tokenizer general test" {
         .{ .number_literal = "beef" },
         .{ .number_literal = "1234" },
         .{ .number_literal = "FF" },
-        .{ .label = .{ .ltype = .parent, .vlaue = "main" } },
-        .{ .label = .{ .ltype = .parent, .vlaue = "main/sub" } },
-        .{ .label = .{ .ltype = .child, .vlaue = "sub" } },
+        .{ .label_def = .{ .ltype = .parent, .value = "main" } },
+        .{ .label_def = .{ .ltype = .parent, .value = "main/sub" } },
+        .{ .label_def = .{ .ltype = .child, .value = "sub" } },
         .{ .comment = "this is a comment" },
         .{ .comment = "this is another !\"#$%6 one  " },
         .{ .raw_string = "hello1234()!=" },
