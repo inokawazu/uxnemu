@@ -67,6 +67,9 @@ pub fn init(arena: std.mem.Allocator, source: []u8) !Self {
     const unresolved_labels = 
         try std.ArrayList(UnresolvedLabel).initCapacity(arena, 0);
 
+    const anon_id_stack = 
+        try std.ArrayList(u16).initCapacity(arena, 32);
+
     const program = try arena.alloc(u8, 0x10000);
     errdefer arena.free(program);
     return .{
@@ -75,6 +78,7 @@ pub fn init(arena: std.mem.Allocator, source: []u8) !Self {
         .labels = labels,
         .program = program,
         .unresolved_labels = unresolved_labels,
+        .anon_id_stack = anon_id_stack,
     };
 }
 
@@ -106,8 +110,14 @@ fn parseLabel(self: *Self, toparse: []const u8) ![]const u8 {
         return AssemblerError.ZeroLengthLabel;
     }
 
-    const is_bad_start = !(label.len == 1 and label[0] == '{') 
-        and std.mem.find(u8, NON_LABEL_START_RUNES, label[0..1]) != null;
+    if (label.len == 1 and label[0] == '{') {
+        const id = self.anon_id;
+        try self.anon_id_stack.append(self.arena, id);
+        self.anon_id += 1;
+        return try std.fmt.allocPrint(self.arena, "{{}}lambda{x:0>4}", .{id});
+    }
+
+    const is_bad_start = std.mem.find(u8, NON_LABEL_START_RUNES, label[0..1]) != null;
     if (is_bad_start) {
         return AssemblerError.InvalidLabel;
     }
@@ -479,8 +489,12 @@ pub fn assemble(self: *Self) !void {
                 for (raw_string) |c| try self.writeByte(c);
             },
             .right_curly_brace => {
-                std.debug.print("TODO: right_curly_brace", .{});
-                unreachable;
+                const id = self.anon_id_stack.pop() 
+                    orelse return AssemblerError.UnmatchedLeftAnonBracket;
+                const label = 
+                    try std.fmt.allocPrint(self.arena, "{{}}lambda{x:0>4}", .{id});
+                
+                try self.labels.put(label, @truncate(self.gen_ptr));
             },
             .identifier => |identifier| {
                 if (tryParseLiteral(identifier)) |num| {
