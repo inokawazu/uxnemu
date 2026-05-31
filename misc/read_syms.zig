@@ -12,39 +12,25 @@ const Symbol = struct {
 pub fn main(init: std.process.Init) !void {
     const io = init.io;
     const gpa = init.gpa;
-    const stat = try std.Io.File.stdin().stat(io);
-    var buffer = try gpa.alloc(u8, stat.size);
-    defer gpa.free(buffer);
-    
-    const readn = try std.Io.File.stdin().readPositionalAll(io, buffer, 0);
-    if (readn < stat.size) {
-        return error.ReadLessThanBuffer;
-    }
 
-    var symbols = try std.ArrayList(Symbol).initCapacity(gpa, 64);
-    defer symbols.deinit(gpa);
+    // const stat = try std.Io.File.stdin().stat(io);
+    // var buffer = try gpa.alloc(u8, stat.size);
+    // defer gpa.free(buffer);
 
-    
 
-    var pos: usize = 0;
-    while ( pos + 2 <= buffer.len ) {
-        const memory_bytes = buffer[pos..pos+2];
-        const memory: u16 = ( @as(u16, memory_bytes[0]) << 4 ) | @as(u16, memory_bytes[1]);
-        pos += 2;
-        var end_symbol_pos = pos;
-        while (end_symbol_pos < buffer.len and buffer[end_symbol_pos] != 0x00) { 
-            end_symbol_pos += 1; 
-        }
-        const symbol = buffer[pos..end_symbol_pos+1];
-        pos = end_symbol_pos+1;
-        
-        // std.fmt.Alt(comptime Data: type, comptime formatFn: fn (Data, *Writer) error{WriteFailed}!void)
-        try symbols.append(gpa, .{ .memory = memory, .symbol = symbol });
-    }
+    var stdin_buffer: [0x100]u8 = undefined;
+    var reader = std.Io.File.stdin().reader(io, &stdin_buffer);
+    const data = try reader.interface.allocRemaining(gpa, .unlimited);
+    defer gpa.free(data);
 
-    std.mem.sort(Symbol, symbols.items, false, Symbol.compare);
+    var i: usize = 0;
+    while (i < data.len) {
+        const size = std.mem.readVarInt(u16, data[i..i+2], .native);
+        i += 2;
 
-    for (symbols.items) |symbol| {
-        std.debug.print("0x{X:0>4} : {s}\n", .{symbol.memory, symbol.symbol});
+        const j = std.mem.findScalarPos(u8, data, i, 0) 
+            orelse break;
+        std.debug.print("0x{x:0>4}: '{s}'\n", .{size, data[i..j]});
+        i = j + 1;
     }
 }
