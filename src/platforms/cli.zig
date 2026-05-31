@@ -98,9 +98,7 @@ const CLI = struct {
             0x10...0x1f => {
                 return self.console.dei(vm, dev, s);
             },
-            else => {
-                return vm.fetch(dev, s);
-            },
+            else => return vm.fetch(dev, s),
         }
     }
 
@@ -112,9 +110,7 @@ const CLI = struct {
             0x10...0x1f => {
                 return self.console.deo(vm, dev, value, s);
             },
-            else => {
-                vm.store(value, dev, s);
-            },
+            else => {},
         }
     }
 };
