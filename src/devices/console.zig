@@ -56,12 +56,13 @@ pub fn boot(self: *Self, vm: *uxn.VM) void {
 
 pub fn dei(_: *Self, vm: *uxn.VM, dev: u8, s: u1) u16 {
     // std.debug.print("running DEO for device 0x{X:2>0}\n", .{dev});
-    const x = vm.fetch(dev, s);
+    const x = vm.zp_fetch(dev, s);
     return x;
 }
 
 pub fn deo(self: *Self, vm: *uxn.VM, dev: u8, value: u16, s: u1) void {
-    // std.debug.print("running DEO for device 0x{X:2>0}\n", .{dev});
+    vm.zp_store(value, dev, s);
+
     switch (dev) {
         WRITE => {
             const output = [_]u8{@truncate(value)};
@@ -83,7 +84,6 @@ pub fn deo(self: *Self, vm: *uxn.VM, dev: u8, value: u16, s: u1) void {
         },
         else => {},
     }
-    vm.store(value, dev, s);
 }
 
 pub fn end_args(self: *const Self) bool {
@@ -131,8 +131,8 @@ pub fn fetch_input(self: *Self) ConsoleInput {
 
 pub fn read_input(self: *Self, vm: *uxn.VM) void {
     const input = self.fetch_input();
-    vm.store(@intCast(input.c), @intCast(READ), 0);
-    vm.store(@intFromEnum(input.t), @intCast(TYPE), 0);
+    vm.zp_store(input.c, READ, 0);
+    vm.zp_store(@intFromEnum(input.t), TYPE, 0);
 }
 
 const ConsoleInput = struct { c: u8, t: ConsoleInputType };

@@ -94,7 +94,7 @@ const CLI = struct {
         switch (dev) {
             0x00...0x0f => return self.system.dei(vm, dev, s),
             0x10...0x1f => return self.console.dei(vm, dev, s),
-            else => return vm.fetch(dev, s),
+            else => return vm.zp_fetch(dev, s),
         }
     }
 
@@ -102,7 +102,7 @@ const CLI = struct {
         switch (dev) {
             0x00...0x0f => return self.system.deo(vm, dev, value, s),
             0x10...0x1f => return self.console.deo(vm, dev, value, s),
-            else => vm.store(value, dev, s),
+            else => vm.zp_store(value, dev, s),
         }
     }
 };

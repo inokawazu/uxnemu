@@ -16,25 +16,20 @@ const Self = @This();
 
 pub const DeviceAddress = enum(u8) {
     unused = 0x00,
-    unused2 = 0x01,
     expansion = 0x02,
-    expansion2 = 0x03,
     wst = 0x04,
     rst = 0x05,
     metadata = 0x06,
-    metadata2 = 0x07,
     red = 0x08,
-    red2 = 0x09,
     green = 0x0a,
-    green2 = 0x0b,
     blue = 0x0c,
-    blue2 = 0x0d,
     debug = 0x0e,
     state = 0x0f,
+    _,
 };
 
 pub fn state(vm: *uxn.VM) u8 {
-    return @truncate(vm.fetch(@intFromEnum(DeviceAddress.state), 0));
+    return @truncate(vm.zp_fetch(@intFromEnum(DeviceAddress.state), 0));
 }
 
 pub fn dei(_: *Self, vm: *uxn.VM, dev: u8, s: u1) u16 {
@@ -42,18 +37,22 @@ pub fn dei(_: *Self, vm: *uxn.VM, dev: u8, s: u1) u16 {
     switch (dev_enum) {
         .wst => return vm.ptr[0],
         .rst => return vm.ptr[1],
-        else => return vm.fetch(dev, s),
+        else => return vm.zp_fetch(dev, s),
+        _ => return vm.zp_fetch(dev, s),
     }
 }
 
 pub fn deo(self: *const Self, vm: *uxn.VM, dev: u8, value: u16, s: u1) void {
+    vm.zp_store(value, dev, s);
+
     const dev_enum: DeviceAddress = @enumFromInt(dev);
     switch (dev_enum) {
         .wst => vm.ptr[0] = @truncate(value),
         .rst => vm.ptr[1] = @truncate(value),
         .expansion => expansion_deo(vm, value),
         .debug => if (value != 0) debug_deo(self, vm),
-        else => vm.store(value, dev, s),
+        else => {},
+        _ => {},
     }
 }
 
