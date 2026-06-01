@@ -99,6 +99,8 @@ const CLI = struct {
     }
 
     pub fn deo(self: *Self, vm: *uxn.VM, dev: u8, value: u16, s: u1) void {
+        // if (dev == 0x0e)
+        //     @breakpoint();
         switch (dev) {
             0x00...0x0f => return self.system.deo(vm, dev, value, s),
             0x10...0x1f => return self.console.deo(vm, dev, value, s),

@@ -19,6 +19,7 @@ pub fn build(b: *std.Build) void {
 
     const cli_exe = b.addExecutable(.{
         .name = "uxncli",
+        .use_llvm = true,
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/platforms/cli.zig"),
             .target = target,
