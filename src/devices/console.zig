@@ -54,13 +54,13 @@ pub fn boot(self: *Self, vm: *uxn.VM) void {
     vm.store(@intFromEnum(input_type), TYPE, 0);
 }
 
-pub fn dei(_: *Self, vm: *uxn.VM, dev: u16, s: u1) u16 {
+pub fn dei(_: *Self, vm: *uxn.VM, dev: u8, s: u1) u16 {
     // std.debug.print("running DEO for device 0x{X:2>0}\n", .{dev});
     const x = vm.fetch(dev, s);
     return x;
 }
 
-pub fn deo(self: *Self, vm: *uxn.VM, dev: u16, value: u16, s: u1) void {
+pub fn deo(self: *Self, vm: *uxn.VM, dev: u8, value: u16, s: u1) void {
     // std.debug.print("running DEO for device 0x{X:2>0}\n", .{dev});
     switch (dev) {
         WRITE => {

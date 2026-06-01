@@ -285,7 +285,7 @@ pub const VM = struct {
 
     pub fn fetch(self: *Self, addr: u16, s: u1) u16 {
         if (s == 1) {
-            return mword(self.ram[addr], self.ram[addr + 1]);
+            return mword(self.ram[addr], self.ram[addr +% 1]);
         } else {
             return self.ram[addr];
         }
@@ -294,7 +294,25 @@ pub const VM = struct {
     pub fn store(self: *Self, x: u16, addr: u16, s: u1) void {
         if (s == 1) {
             self.ram[addr] = @truncate(x >> 8);
-            self.ram[addr + 1] = @truncate(x);
+            self.ram[addr +% 1] = @truncate(x);
+        } else {
+            self.ram[addr] = @truncate(x);
+        }
+    }
+
+
+    pub fn zp_fetch(self: *Self, addr: u8, s: u1) u16 {
+        if (s == 1) {
+            return mword(self.ram[addr], self.ram[addr +% 1]);
+        } else {
+            return self.ram[addr];
+        }
+    }
+
+    pub fn zp_store(self: *Self, x: u16, addr: u8, s: u1) void {
+        if (s == 1) {
+            self.ram[addr] = @truncate(x >> 8);
+            self.ram[addr +% 1] = @truncate(x);
         } else {
             self.ram[addr] = @truncate(x);
         }
@@ -342,9 +360,9 @@ pub const VM = struct {
                         },
                         JSI => {
                             const rel = vm.fetch(pc, 1);
-                            vm.push(pc + 2, 1, 1);
-                            pc +%= rel;
                             pc +%= 2;
+                            vm.push(pc, 1, 1);
+                            pc +%= rel;
                         },
                         else => {
                             unreachable;
@@ -440,14 +458,14 @@ pub const VM = struct {
                 .LDZ => {
                     //TODO: test LDZ
                     const zp = vm.pop(k, r, 0);
-                    const x = vm.fetch(zp, s);
+                    const x = vm.zp_fetch(@truncate(zp), s);
                     vm.push(x, r, s);
                 },
                 .STZ => {
                     //TODO: test STZ
                     const zp = vm.pop(k, r, 0);
                     const x = vm.pop(k, r, s);
-                    vm.store(x, zp, s);
+                    vm.zp_store(x, @truncate(zp), s);
                 },
                 .LDR => {
                     //TODO: test LDR

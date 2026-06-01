@@ -90,27 +90,19 @@ const CLI = struct {
 
     const Self = @This();
 
-    pub fn dei(self: *Self, vm: *uxn.VM, dev: u16, s: u1) u16 {
+    pub fn dei(self: *Self, vm: *uxn.VM, dev: u8, s: u1) u16 {
         switch (dev) {
-            0x00...0x0f => {
-                return self.system.dei(vm, dev, s);
-            },
-            0x10...0x1f => {
-                return self.console.dei(vm, dev, s);
-            },
+            0x00...0x0f => return self.system.dei(vm, dev, s),
+            0x10...0x1f => return self.console.dei(vm, dev, s),
             else => return vm.fetch(dev, s),
         }
     }
 
-    pub fn deo(self: *Self, vm: *uxn.VM, dev: u16, value: u16, s: u1) void {
+    pub fn deo(self: *Self, vm: *uxn.VM, dev: u8, value: u16, s: u1) void {
         switch (dev) {
-            0x00...0x0f => {
-                return self.system.deo(vm, dev, value, s);
-            },
-            0x10...0x1f => {
-                return self.console.deo(vm, dev, value, s);
-            },
-            else => {},
+            0x00...0x0f => return self.system.deo(vm, dev, value, s),
+            0x10...0x1f => return self.console.deo(vm, dev, value, s),
+            else => vm.store(value, dev, s),
         }
     }
 };

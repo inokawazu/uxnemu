@@ -37,7 +37,7 @@ pub fn state(vm: *uxn.VM) u8 {
     return @truncate(vm.fetch(@intFromEnum(DeviceAddress.state), 0));
 }
 
-pub fn dei(_: *Self, vm: *uxn.VM, dev: u16, s: u1) u16 {
+pub fn dei(_: *Self, vm: *uxn.VM, dev: u8, s: u1) u16 {
     const dev_enum: DeviceAddress = @enumFromInt(dev);
     switch (dev_enum) {
         .wst => return vm.ptr[0],
@@ -46,7 +46,7 @@ pub fn dei(_: *Self, vm: *uxn.VM, dev: u16, s: u1) u16 {
     }
 }
 
-pub fn deo(self: *const Self, vm: *uxn.VM, dev: u16, value: u16, s: u1) void {
+pub fn deo(self: *const Self, vm: *uxn.VM, dev: u8, value: u16, s: u1) void {
     const dev_enum: DeviceAddress = @enumFromInt(dev);
     switch (dev_enum) {
         .wst => vm.ptr[0] = @truncate(value),
