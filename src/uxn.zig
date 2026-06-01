@@ -71,126 +71,55 @@ pub const Instruction = packed struct {
     }
 
     pub fn format(self: Instruction, writer: *std.Io.Writer) !void {
-        switch (self.opcode) {
+        const asbytes = self.opcode;
+        switch (asbytes) {
             .BRK => {
-                switch (self.to_u8()) {
+                switch (asbytes) {
                     LIT2, LIT2r, LIT, LITr => {
                         try writer.print("LIT", .{});
                         if (self.short_mode == 1) try writer.print("2", .{});
                         if (self.return_mode == 1) try writer.print("r", .{});
-                        try writer.print("(0x{x:0>2})", .{self.to_u8()});
+                        try writer.print("(0x{x:0>2})", .{asbytes});
                         return;
                     },
-                    BRK => {
-                        return try writer.print("BRK(0x{X:0>2})", .{self.to_u8()});
-                    },
-                    JCI => {
-                        return try writer.print("JCI(0x{X:0>2})", .{self.to_u8()});
-                    },
-                    JMI => {
-                        return try writer.print("JMI(0x{X:0>2})", .{self.to_u8()});
-                    },
-                    JSI => {
-                        return try writer.print("JSI(0x{X:0>2})", .{self.to_u8()});
-                    },
-                    else => {
-                        return try writer.print("UNK(0x{X:0>2})", .{self.to_u8()});
-                    },
+                    BRK => return try writer.print("BRK(0x{X:0>2})",  .{asbytes}),
+                    JCI => return try writer.print("JCI(0x{X:0>2})",  .{asbytes}),
+                    JMI => return try writer.print("JMI(0x{X:0>2})",  .{asbytes}),
+                    JSI => return try writer.print("JSI(0x{X:0>2})",  .{asbytes}),
+                    else => return try writer.print("UNK(0x{X:0>2})", .{asbytes}),
                 }
             },
-            .INC => {
-                try writer.print("INC", .{});
-            },
-            .POP => {
-                try writer.print("POP", .{});
-            },
-            .NIP => {
-                try writer.print("NIP", .{});
-            },
-            .SWP => {
-                try writer.print("SWP", .{});
-            },
-            .ROT => {
-                try writer.print("ROT", .{});
-            },
-            .DUP => {
-                try writer.print("DUP", .{});
-            },
-            .OVR => {
-                try writer.print("OVR", .{});
-            },
-            .EQU => {
-                try writer.print("EQU", .{});
-            },
-            .NEQ => {
-                try writer.print("NEQ", .{});
-            },
-            .GTH => {
-                try writer.print("GTH", .{});
-            },
-            .LTH => {
-                try writer.print("LTH", .{});
-            },
-            .JMP => {
-                try writer.print("JMP", .{});
-            },
-            .JCN => {
-                try writer.print("JCN", .{});
-            },
-            .JSR => {
-                try writer.print("JSR", .{});
-            },
-            .STH => {
-                try writer.print("STH", .{});
-            },
-            .LDZ => {
-                try writer.print("LDZ", .{});
-            },
-            .STZ => {
-                try writer.print("STZ", .{});
-            },
-            .LDR => {
-                try writer.print("LDR", .{});
-            },
-            .STR => {
-                try writer.print("STR", .{});
-            },
-            .LDA => {
-                try writer.print("LDA", .{});
-            },
-            .STA => {
-                try writer.print("STA", .{});
-            },
-            .DEI => {
-                try writer.print("DEI", .{});
-            },
-            .DEO => {
-                try writer.print("DEO", .{});
-            },
-            .ADD => {
-                try writer.print("ADD", .{});
-            },
-            .SUB => {
-                try writer.print("SUB", .{});
-            },
-            .MUL => {
-                try writer.print("MUL", .{});
-            },
-            .DIV => {
-                try writer.print("DIV", .{});
-            },
-            .AND => {
-                try writer.print("AND", .{});
-            },
-            .ORA => {
-                try writer.print("ORA", .{});
-            },
-            .EOR => {
-                try writer.print("EOR", .{});
-            },
-            .SFT => {
-                try writer.print("SFT", .{});
-            },
+            .INC => try writer.print("INC", .{}),
+            .POP => try writer.print("POP", .{}),
+            .NIP => try writer.print("NIP", .{}),
+            .SWP => try writer.print("SWP", .{}),
+            .ROT => try writer.print("ROT", .{}),
+            .DUP => try writer.print("DUP", .{}),
+            .OVR => try writer.print("OVR", .{}),
+            .EQU => try writer.print("EQU", .{}),
+            .NEQ => try writer.print("NEQ", .{}),
+            .GTH => try writer.print("GTH", .{}),
+            .LTH => try writer.print("LTH", .{}),
+            .JMP => try writer.print("JMP", .{}),
+            .JCN => try writer.print("JCN", .{}),
+            .JSR => try writer.print("JSR", .{}),
+            .STH => try writer.print("STH", .{}),
+            .LDZ => try writer.print("LDZ", .{}),
+            .STZ => try writer.print("STZ", .{}),
+            .LDR => try writer.print("LDR", .{}),
+            .STR => try writer.print("STR", .{}),
+            .LDA => try writer.print("LDA", .{}),
+            .STA => try writer.print("STA", .{}),
+            .DEI => try writer.print("DEI", .{}),
+            .DEO => try writer.print("DEO", .{}),
+            .ADD => try writer.print("ADD", .{}),
+            .SUB => try writer.print("SUB", .{}),
+            .MUL => try writer.print("MUL", .{}),
+            .DIV => try writer.print("DIV", .{}),
+            .AND => try writer.print("AND", .{}),
+            .ORA => try writer.print("ORA", .{}),
+            .EOR => try writer.print("EOR", .{}),
+            .SFT => try writer.print("SFT", .{}),
         }
         if (self.short_mode == 1) try writer.print("2", .{});
         if (self.keep_mode == 1) try writer.print("k", .{});
