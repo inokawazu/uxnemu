@@ -9,8 +9,6 @@ const Self = @This();
 mem_offset: u8 = 0xa0,
     io: std.Io,
     file: ?std.Io.File = null,
-    // dir: ?std.Io.Dir = null,
-
 
     const DeviceAddress = enum(u8) {
         vector = 0x00,
@@ -22,6 +20,7 @@ mem_offset: u8 = 0xa0,
         length = 0x0a,
         read = 0x0c,
         write = 0x0e,
+        _,
     };
 
 pub fn devAddr(self: *Self, da: DeviceAddress) u8 {
@@ -33,106 +32,113 @@ pub fn dei(_: *Self, vm: *uxn.VM, dev: u8, s: u1) u16 {
 }
 
 pub fn deo(self: *Self, vm: *uxn.VM, dev: u8, value: u16, s: u1) void {
+    const device_enum: DeviceAddress = @enumFromInt(dev - self.mem_offset);
     vm.zp_store(value, dev, s);
 
-    const device_enum: DeviceAddress = @enumFromInt(dev - self.mem_offset);
-    std.debug.print("Operation: '{any}'\n", .{device_enum});
-    if (device_enum == .name)
-        std.debug.print("Filename: '{s}'\n", .{self.getFileName(vm)});
-    if (device_enum == .length)
-        std.debug.print("Length: '{d}'\n", .{self.getLength(vm)});
+    switch (device_enum) {
+        .name => {
+            if (self.file) |file| {
+                file.close(self.io);
+                self.file = null;
+            }
+        },
+        .read => {
+            const cwd = std.Io.Dir.cwd();
+            const sub_path = getStr(
+                vm, 
+                vm.fetch(self.devAddr(.name), 1));
 
-    if ( dev == self.devAddr(.name) ) {
-        if (self.file) |file| {
-            file.close(self.io);
-            self.file = null;
-        }
-    } else if (dev == self.devAddr(.read)) {
-        const cwd = std.Io.Dir.cwd();
-        const sub_path = getStr(
-            vm, 
-            vm.fetch(self.devAddr(.name), 1));
+            const stat = 
+                cwd.statFile( self.io, sub_path, .{}) catch return;
 
-        const stat = 
-            cwd.statFile( self.io, sub_path, .{}) catch return;
+            switch (stat.kind) {
+                .file => {
+                    if (self.file == null)
+                        self.file = cwd.openFile(self.io, sub_path, .{ .mode = .read_only })
+                            catch return;
 
-        switch (stat.kind) {
-            .file => {
-                if (self.file == null)
-                    self.file = cwd.openFile(self.io, sub_path, .{ .mode = .read_only })
-                        catch return;
+                    const rptr: usize = @intCast(vm.fetch(self.devAddr(.read), 1));
+                    const rptr_end: usize = @min(rptr + self.getLength(vm), 0x10000);
+                    const buffer = vm.ram[rptr..rptr_end];
 
-                const rptr: usize = @intCast(vm.fetch(self.devAddr(.read), 1));
-                const rptr_end: usize = @min(rptr + self.getLength(vm)+1, vm.ram.len);
-                const buffer = vm.ram[rptr..rptr_end];
+                    var reader_buffer: [0x10]u8 = undefined;
+                    var reader = self.file.?.reader(self.io, &reader_buffer);
+                    const nread = reader.interface.readSliceShort(buffer) catch
+                        return std.debug.print("failed to read from file", .{});
 
-                const nread = self.file.?.readStreaming(self.io, &.{buffer}) catch 0;
-                // var file_buffer: [4096]u8 = undefined;
-                // var fr = self.file.?.reader(self.io, &file_buffer);
-                // const nread = fr.interface.(buffer) catch 0;
-
-                vm.store(@intCast(nread), self.devAddr(.success), 1);
-            },
-            .directory => {
-                const dir = cwd.openDir(self.io, sub_path, .{ .iterate = true }) catch return;
-                defer dir.close(self.io);
-
-                var iter = dir.iterate();
-                var rptr: usize = @intCast(vm.fetch(self.devAddr(.read), 1));
-                while (iter.next(self.io) catch return) |x|
-                    rptr += self.writeStatInfo(vm, dir, x.name, @truncate(rptr)) catch return;
+                    vm.store(@intCast(nread), self.devAddr(.success), 1);
                 },
-                else => {}
-        }
-    } else if (dev == self.devAddr(.stat)) {
-        const cwd = std.Io.Dir.cwd();
-        const stat_addr = self.devAddr(.stat);
-        _ = self.writeStatInfo(
-            vm, cwd, 
-            self.getFileName(vm), 
-            stat_addr) catch return;
-    } else if (dev == self.devAddr(.write)) {
-        const is_append = vm.fetch(self.devAddr(.append), 0) != 0x00;
-        const sub_path = self.getFileName(vm);
+                .directory => {
+                    const dir = cwd.openDir(self.io, sub_path, .{ .iterate = true }) catch return;
+                    defer dir.close(self.io);
 
-        if (self.file == null)
-            self.file = std.Io.Dir.cwd()
-                .createFile(
-                    self.io,
-                    sub_path,
-                    .{ .truncate = !is_append, .read = false })
-                catch { 
-                    std.debug.print("write: failed to make writable file.\n", .{});
-                    return;
-                };
+                    var iter = dir.iterate();
+                    var rptr: usize = @intCast(vm.fetch(self.devAddr(.read), 1));
+                    while (iter.next(self.io) catch return) |x|
+                        rptr += self.writeStatInfo(vm, dir, x.name, @truncate(rptr)) catch return;
+                    },
+                    else => {}
+            }
+        },
+        .stat => {
+            const cwd = std.Io.Dir.cwd();
+            const stat_addr = vm.zp_fetch(self.devAddr(.stat), 1);
+            const nwrite = self.writeStatInfo(
+                vm, cwd, 
+                self.getFileName(vm), 
+                stat_addr) catch return;
+            vm.store(@truncate(nwrite), self.devAddr(.success), 1);
+            },
+            .write => {
+                const is_append = vm.fetch(self.devAddr(.append), 0) != 0x00;
+                const sub_path = self.getFileName(vm);
 
-        var wbuffer = std.mem.zeroes([64]u8);
-        var writer = self.file.?.writer(self.io, &wbuffer);
+                if (self.file == null)
+                    self.file = std.Io.Dir.cwd()
+                        .createFile(
+                            self.io,
+                            sub_path,
+                            .{ .truncate = !is_append, .read = false })
+                        catch { 
+                            std.debug.print("write: failed to make writable file.\n", .{});
+                            return;
+                        };
 
-        const wptr: usize = vm.fetch(self.devAddr(.write), 1);
-        const wptr_end: usize = @min(wptr+self.getLength(vm)+1, vm.ram.len);
+                var writer_buffer = std.mem.zeroes([0x10]u8);
+                var writer = self.file.?.writer(self.io, &writer_buffer);
 
-        const towrite = vm.ram[wptr..wptr_end];
-        
-        std.debug.print("I am writing {s} to {s}\n", .{towrite, self.getFileName(vm)});
+                if (is_append) {
+                    const file_len = self.file.?.length(self.io) 
+                        catch return std.debug.print("failed to get file length\n", .{});
+                    writer.seekTo(file_len) 
+                        catch return std.debug.print("failed to seek to the end", .{});
+                }
 
-        writer.interface.writeAll(towrite) 
-            catch {
-                std.debug.print("write: failed to write data to file buffer\n", .{});
-                return;
-            };
+                const wptr: usize = vm.fetch(self.devAddr(.write), 1);
+                const wptr_end: usize = @min(wptr+self.getLength(vm), 0x10000);
 
-        vm.store(@truncate(towrite.len), self.devAddr(.success), 1);
-    } else if (dev == self.devAddr(.delete)) {
-        if (self.file != null)
-            self.file.?.close(self.io);
+                const towrite = vm.ram[wptr..wptr_end];
 
-        const sub_path = self.getFileName(vm);
-        std.Io.Dir.cwd().deleteFile(self.io, sub_path) catch {
-            std.debug.print("write: failed to delete file\n", .{});
-            vm.store(0, self.devAddr(.success), 1);
-        };
-        vm.store(1, self.devAddr(.success), 1);
+                writer.interface.writeAll(towrite) 
+                    catch {
+                        std.debug.print("write: failed to write data to file buffer\n", .{});
+                        return;
+                    };
+                writer.flush() catch {std.debug.print("failed to flush\n", .{}); return;};
+
+                vm.store(@truncate(towrite.len), self.devAddr(.success), 1);
+            },
+            .delete => {
+                if (self.file != null)
+                    self.file.?.close(self.io);
+
+                const sub_path = self.getFileName(vm);
+                std.Io.Dir.cwd().deleteFile(self.io, sub_path) catch 
+                    return vm.store(0, self.devAddr(.success), 1);
+                vm.store(1, self.devAddr(.success), 1);
+            },
+            else => {},
+            _ => {},
     }
 }
 
@@ -155,13 +161,18 @@ fn writeStatInfo(self: *Self, vm: *uxn.VM, dir: std.Io.Dir, sub_path: []const u8
         @memmove(&info_str, "!!!!");
     }
 
-    const rptr_end: usize = @min(
-        rptr + self.getLength(vm) + 1,
-        rptr + info_str.len + sub_path.len + 2 + 1,
-        vm.ram.len);
-    const buffer = vm.ram[rptr..rptr_end];
-    const written = try std.fmt.bufPrint(buffer, "{s} {s}\n", .{info_str, sub_path});
-    return written.len;
+    var buffer: [0x10]u8 = undefined;
+    const to_write = try std.fmt.bufPrint(
+        &buffer, "{s} {s}\n", .{info_str, sub_path});
+    var rptr_offest: usize = 0;
+    while (
+        rptr_offest < self.getLength(vm) and 
+        rptr + rptr_offest < 0x10000 and
+        rptr_offest < to_write.len) : (rptr_offest += 1)
+        vm.ram[rptr + rptr_offest] = to_write[rptr_offest];
+
+    // std.debug.print("getting the stat ({d} bytes) of {s} -> {s} to 0x{x:2>4}..0x{x:2>4}\n", .{rptr_offest, sub_path, to_write, rptr, rptr+rptr_offest});
+    return rptr_offest;
 }
 
 fn getFileName(self: *Self, vm: *uxn.VM) []u8 {
@@ -172,7 +183,7 @@ fn getStr(vm: *uxn.VM, addr: u16) []u8 {
     const end_addr = std.mem.findScalarPos(
         u8, vm.ram, 
         @intCast(addr), 0x00)
-        orelse vm.ram.len;
+        orelse 0x10000;
     return vm.ram[addr..end_addr];
 }
 

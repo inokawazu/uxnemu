@@ -2,6 +2,7 @@ const std = @import("std");
 const uxn = @import("uxn");
 const Console = @import("devices").Console;
 const System = @import("devices").System;
+const File = @import("devices").File;
 const print = @import("std").debug.print;
 
 const UXNCLIError = error{
@@ -50,7 +51,15 @@ pub fn main(init: std.process.Init) !void {
 
     var system: System = .{ .debug_writer = &stderr.interface };
 
-    var cli_dev: CLI = .{ .console = &console, .system = &system };
+    var file_a: File = .{ .io = io, .mem_offset = 0xa0 };
+    var file_b: File = .{ .io = io, .mem_offset = 0xb0 };
+
+    var cli_dev: CLI = .{ 
+        .console = &console,
+        .system = &system,
+        .file_a = &file_a,
+        .file_b = &file_b,
+    };
 
     const dev = uxn.Device.init(&cli_dev);
 
@@ -87,6 +96,8 @@ fn convertToMutableSlices(allocator: std.mem.Allocator, input: []const [:0]const
 const CLI = struct {
     console: *Console,
     system: *System,
+    file_a: *File,
+    file_b: *File,
 
     const Self = @This();
 
@@ -94,16 +105,18 @@ const CLI = struct {
         switch (dev) {
             0x00...0x0f => return self.system.dei(vm, dev, s),
             0x10...0x1f => return self.console.dei(vm, dev, s),
+            0xa0...0xaf => return self.file_a.dei(vm, dev, s),
+            0xb0...0xbf => return self.file_b.dei(vm, dev, s),
             else => return vm.zp_fetch(dev, s),
         }
     }
 
     pub fn deo(self: *Self, vm: *uxn.VM, dev: u8, value: u16, s: u1) void {
-        // if (dev == 0x0e)
-        //     @breakpoint();
         switch (dev) {
             0x00...0x0f => return self.system.deo(vm, dev, value, s),
             0x10...0x1f => return self.console.deo(vm, dev, value, s),
+            0xa0...0xaf => return self.file_a.deo(vm, dev, value, s),
+            0xb0...0xbf => return self.file_b.deo(vm, dev, value, s),
             else => vm.zp_store(value, dev, s),
         }
     }

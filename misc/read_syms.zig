@@ -35,7 +35,7 @@ pub fn main(init: std.process.Init) !void {
 
     var i: usize = 0;
     while (i < data.len) {
-        const size = std.mem.readVarInt(u16, data[i..i+2], .native);
+        const size = std.mem.readVarInt(u16, data[i..i+2], .big);
         i += 2;
 
         const j = std.mem.findScalarPos(u8, data, i, 0) 
