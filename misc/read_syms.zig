@@ -1,3 +1,7 @@
+// read_syms.zig <file.rom.sym>
+// Lists out the symbols from a .sym file produced by drifblim
+
+
 const std = @import("std");
 
 const Symbol = struct {
@@ -13,15 +17,21 @@ pub fn main(init: std.process.Init) !void {
     const io = init.io;
     const gpa = init.gpa;
 
-    // const stat = try std.Io.File.stdin().stat(io);
-    // var buffer = try gpa.alloc(u8, stat.size);
-    // defer gpa.free(buffer);
+    const args = try init.minimal.args.toSlice(init.arena.allocator());
 
+    if (args.len < 2) {
+        std.log.err("{s} <file.rom.sym>", .{args[0]});
+        return error.MissingArgument;
+    }
 
-    var stdin_buffer: [0x100]u8 = undefined;
-    var reader = std.Io.File.stdin().reader(io, &stdin_buffer);
-    const data = try reader.interface.allocRemaining(gpa, .unlimited);
+    const data = try std.Io.Dir.cwd().readFileAlloc(
+        io, args[1], gpa, .unlimited
+        );
     defer gpa.free(data);
+
+
+    var stdout_buffer: [0x100]u8 = undefined;
+    var writer = std.Io.File.stdout().writer(io, &stdout_buffer);
 
     var i: usize = 0;
     while (i < data.len) {
@@ -30,7 +40,8 @@ pub fn main(init: std.process.Init) !void {
 
         const j = std.mem.findScalarPos(u8, data, i, 0) 
             orelse break;
-        std.debug.print("0x{x:0>4}: '{s}'\n", .{size, data[i..j]});
+        try writer.interface.print("0x{x:0>4}:{s}\n", .{size, data[i..j]});
         i = j + 1;
     }
+    try writer.flush();
 }
