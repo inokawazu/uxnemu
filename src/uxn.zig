@@ -275,16 +275,12 @@ pub const VM = struct {
                             pc +%= 1;
                             pc +%= s;
                         },
-                        BRK => {
-                            return;
-                        },
+                        BRK => return,
                         JCI => {
                             // TODO: test JCI
                             const b = vm.pop(r, 0);
-                            if (b != 0) {
-                                const x = vm.fetch(pc, 1);
-                                pc +%= x;
-                            }
+                            if (b != 0)
+                                pc +%= vm.fetch(pc, 1);
                             pc +%= 2;
                         },
                         JMI => {

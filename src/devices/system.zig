@@ -42,7 +42,7 @@ pub fn dei(_: *Self, vm: *uxn.VM, dev: u8, s: u1) u16 {
     }
 }
 
-pub fn deo(self: *const Self, vm: *uxn.VM, dev: u8, value: u16, s: u1) void {
+pub fn deo(self: *Self, vm: *uxn.VM, dev: u8, value: u16, s: u1) void {
     vm.zp_store(value, dev, s);
 
     const dev_enum: DeviceAddress = @enumFromInt(dev);
@@ -50,7 +50,11 @@ pub fn deo(self: *const Self, vm: *uxn.VM, dev: u8, value: u16, s: u1) void {
         .wst => vm.ptr[0] = @truncate(value),
         .rst => vm.ptr[1] = @truncate(value),
         .expansion => expansion_deo(vm, value),
-        .debug => if (value != 0) debug_deo(self, vm),
+        .debug => if (value != 0) {
+            self.debug_deo(vm) catch |err| {
+                std.debug.print("Failed to print DEBUG: {s}\n", .{@errorName(err)});
+            };
+        },
         else => {},
         _ => {},
     }
@@ -61,31 +65,35 @@ fn expansion_deo(_: *uxn.VM, _: u16) void {
     // TODO
 }
 
-fn debug_deo(self: *const Self, vm: *uxn.VM) void {
+fn debug_deo(self: *Self, vm: *uxn.VM) !void {
     const rs = [_]usize{ 0, 1 };
     for (rs) |r| {
-        var i: isize = @max(vm.ptr[r], 7);
+        // var i: isize = @max(vm.ptr[r], 7);
+        var i: isize = 7;
+        // std.debug.print("I AM PRINTING! stk size = {d}\n", .{i});
         if (r == 0) {
-            self.debug_writer.print("WST ", .{}) catch {};
+            try self.debug_writer.print("WST ", .{});
         } else {
-            self.debug_writer.print("RST ", .{}) catch {};
+            try self.debug_writer.print("RST ", .{});
         }
 
         while (i >= vm.ptr[r]) : (i -= 1) {
-            self.debug_writer.print("00", .{}) catch {};
+            try self.debug_writer.print("00", .{});
             if (i == vm.ptr[r]) {
-                self.debug_writer.print("|", .{}) catch {};
+                try self.debug_writer.print("|", .{});
             } else {
-                self.debug_writer.print(" ", .{}) catch {};
+                try self.debug_writer.print(" ", .{});
             }
         }
 
         while (i >= 0) : (i -= 1) {
             const s_value = vm.stk[r][@intCast(i)];
-            self.debug_writer.print("{x:0>2} ", .{s_value}) catch {};
+            try self.debug_writer.print("{x:0>2} ", .{s_value});
         }
-        self.debug_writer.print("<\n", .{}) catch {};
+        try self.debug_writer.print("<", .{});
+        try self.debug_writer.print("{x:0>2}\n", .{vm.ptr[r]});
     }
+    try self.debug_writer.defaultFlush();
 }
 
 test "testing dei/deo" {
