@@ -24,7 +24,8 @@ pub fn main(init: std.process.Init) !void {
         .readFileAlloc(io, args[1], init.gpa, .unlimited);
     defer init.gpa.free(program);
 
-    var vm = try uxn.VM.init(init.gpa);
+    var _vm = try uxn.VM.init(init.gpa);
+    var vm = &_vm;
     defer vm.deinit(init.gpa);
 
     try vm.load_rom(program);
@@ -64,17 +65,16 @@ pub fn main(init: std.process.Init) !void {
     const dev = uxn.Device.init(&cli_dev);
 
     // Reset Vector
-    console.boot(&vm);
+    console.boot(vm);
     vm.eval(uxn.RESET_VECTOR, dev);
 
     // Console Vector
-    while (vm.ram[Console.VECTOR] != 0 and System.state(&vm) == 0) {
-        console.read_input(&vm);
-        const console_vector_addr = vm.fetch(Console.VECTOR, 1);
-        vm.eval(console_vector_addr, dev);
+    while (console.vector(vm) != 0 and System.state(vm) == 0) {
+        console.read_input(vm);
+        vm.eval(console.vector(vm), dev);
     }
 
-    std.process.exit(System.state(&vm) & 0x7f);
+    std.process.exit(System.state(vm) & 0x7f);
 }
 
 fn convertToMutableSlices(allocator: std.mem.Allocator, input: []const [:0]const u8) ![][]u8 {

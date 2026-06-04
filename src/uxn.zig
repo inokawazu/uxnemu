@@ -896,11 +896,11 @@ test "mem fetching" {
 }
 
 test "testing rel_offset for various values positive and negative" {
-    const i8_offests = [_]i8{ -5, -100, 0, 1, -69, 50 };
+    const i8_offsets = [_]i8{ -5, -100, 0, 1, -69, 50 };
     const base: u16 = 0x0420;
     const i32_base: i32 = @intCast(base);
 
-    for (i8_offests) |i8_offset| {
+    for (i8_offsets) |i8_offset| {
         const expected = i32_base + i8_offset;
         const actual = rel_offset(base, @bitCast(i8_offset));
         try std.testing.expectEqual(expected, actual);

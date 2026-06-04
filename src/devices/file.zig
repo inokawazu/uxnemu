@@ -164,15 +164,15 @@ fn writeStatInfo(self: *Self, vm: *uxn.VM, dir: std.Io.Dir, sub_path: []const u8
     var buffer: [0x10]u8 = undefined;
     const to_write = try std.fmt.bufPrint(
         &buffer, "{s} {s}\n", .{info_str, sub_path});
-    var rptr_offest: usize = 0;
+    var rptr_offset: usize = 0;
     while (
-        rptr_offest < self.getLength(vm) and 
-        rptr + rptr_offest < 0x10000 and
-        rptr_offest < to_write.len) : (rptr_offest += 1)
-        vm.ram[rptr + rptr_offest] = to_write[rptr_offest];
+        rptr_offset < self.getLength(vm) and 
+        rptr + rptr_offset < 0x10000 and
+        rptr_offset < to_write.len) : (rptr_offset += 1)
+        vm.ram[rptr + rptr_offset] = to_write[rptr_offset];
 
     // std.debug.print("getting the stat ({d} bytes) of {s} -> {s} to 0x{x:2>4}..0x{x:2>4}\n", .{rptr_offest, sub_path, to_write, rptr, rptr+rptr_offest});
-    return rptr_offest;
+    return rptr_offset;
 }
 
 fn getFileName(self: *Self, vm: *uxn.VM) []u8 {

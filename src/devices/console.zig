@@ -8,28 +8,45 @@ errIo: *std.Io.Writer,
 args: [][]u8,
 argi: usize,
 argi_j: usize,
-// end_args: bool,
-// reached_inIo_end: bool = true,
+addr_offest: u8 = 0x10,
 
-pub const VECTOR: u8 = 0x10;
-pub const READ: u8 = 0x12;
-pub const TYPE: u8 = 0x17;
-pub const WRITE: u8 = 0x18;
-pub const ERROR: u8 = 0x19;
-pub const ADDR: u8 = 0x1c;
-pub const MODE: u8 = 0x1e;
-pub const EXEC: u8 = 0x1f;
+const DeviceAddress = enum(u8) {
+    vector = 0x00,
+    read = 0x02,
+    console_type = 0x07,
+    write = 0x08,
+    console_error = 0x09,
+    addr = 0x0c,
+    mode = 0x0e,
+    exec = 0x0f,
+    _,
+};
+
+const ConsoleInput = struct { c: u8, t: ConsoleInputType };
+
+// no-queue(0), stdin(1), argument(2), argument-spacer(3), argument-end(4)
+const ConsoleInputType = enum(u4) {
+    no_queue = 0,
+    stdin = 1,
+    argument = 2,
+    argument_spacer = 3,
+    argument_end = 4,
+};
+
+pub fn devAddr(self: *Self, da: DeviceAddress) u8 {
+    return self.addr_offest +% @intFromEnum(da);
+}
+
+pub fn vector(self: * Self, vm: *uxn.VM) u16 {
+    const vector_addr = self.devAddr(.vector);
+    return vm.zp_fetch(vector_addr, 1);
+}
 
 const Self = @This();
 
 pub fn init(inIo: *std.Io.Reader, outIo: *std.Io.Writer, errIo: *std.Io.Writer, args: [][]u8) Self {
     const argi = 0;
     const argii = 0;
-
-    // var end_inIo = false;
-    // _ = inIo.peek(1) catch { end_inIo = true; };
-
-    // const end_args = args.len == 0;
 
     return .{
         .inIo = inIo,
@@ -38,8 +55,6 @@ pub fn init(inIo: *std.Io.Reader, outIo: *std.Io.Writer, errIo: *std.Io.Writer, 
         .args = args,
         .argi = argi,
         .argi_j = argii,
-        // .end_inIo = end_inIo,
-        // .end_args= end_args,
     };
 }
 
@@ -51,46 +66,44 @@ pub fn boot(self: *Self, vm: *uxn.VM) void {
         ConsoleInputType.argument
     else
         ConsoleInputType.no_queue;
-    vm.store(@intFromEnum(input_type), TYPE, 0);
+
+    vm.zp_store(@intFromEnum(input_type), self.devAddr(.console_type), 0);
 }
 
 pub fn dei(_: *Self, vm: *uxn.VM, dev: u8, s: u1) u16 {
-    // std.debug.print("running DEO for device 0x{X:2>0}\n", .{dev});
-    const x = vm.zp_fetch(dev, s);
-    return x;
+    return vm.zp_fetch(dev, s);
 }
 
 pub fn deo(self: *Self, vm: *uxn.VM, dev: u8, value: u16, s: u1) void {
-    vm.zp_store(value, dev, s);
+    const device_enum: DeviceAddress = @enumFromInt(dev -% self.addr_offest); 
 
-    switch (dev) {
-        WRITE => {
+    vm.zp_store(value, dev, s);
+    switch (device_enum) {
+        .write => {
             const output = [_]u8{@truncate(value)};
-            self.outIo.writeAll(&output) catch {
-                @panic("Unimplemented\n");
-            };
-            self.outIo.flush() catch {
-                @panic("Unimplemented\n");
-            };
-        },
-        ERROR => {
-            const output = [_]u8{@truncate(value)};
-            self.errIo.writeAll(&output) catch {
-                @panic("Unimplemented\n");
-            };
-            self.errIo.flush() catch {
-                @panic("Unimplemented\n");
-            };
-        },
-        else => {},
+            self.outIo.writeAll(&output) catch
+                return std.debug.print("Failed to write to stdout\n", .{});
+            self.outIo.flush() catch
+                return std.debug.print("Failed to write to flush\n", .{});
+            },
+            .console_error => {
+                const output = [_]u8{@truncate(value)};
+                self.errIo.writeAll(&output) catch
+                    return std.debug.print("Failed to write to stderr\n", .{});
+
+                self.errIo.flush() catch
+                    return std.debug.print("Failed to write to flush\n", .{});
+                },
+                else => {},
+                _ => {},
     }
 }
 
-pub fn end_args(self: *const Self) bool {
+fn end_args(self: *const Self) bool {
     return self.argi >= self.args.len;
 }
 
-pub fn end_inIo(self: *const Self) bool {
+fn end_inIo(self: *const Self) bool {
     _ = self.inIo.peek(1) catch {
         return true;
     };
@@ -131,17 +144,6 @@ pub fn fetch_input(self: *Self) ConsoleInput {
 
 pub fn read_input(self: *Self, vm: *uxn.VM) void {
     const input = self.fetch_input();
-    vm.zp_store(input.c, READ, 0);
-    vm.zp_store(@intFromEnum(input.t), TYPE, 0);
+    vm.zp_store(input.c, self.devAddr(.read), 0);
+    vm.zp_store(@intFromEnum(input.t), self.devAddr(.console_type), 0);
 }
-
-const ConsoleInput = struct { c: u8, t: ConsoleInputType };
-
-// no-queue(0), stdin(1), argument(2), argument-spacer(3), argument-end(4)
-const ConsoleInputType = enum(u4) {
-    no_queue = 0,
-    stdin = 1,
-    argument = 2,
-    argument_spacer = 3,
-    argument_end = 4,
-};
