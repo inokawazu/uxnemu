@@ -362,6 +362,22 @@ fn resolveLabels(self: *Self) !void {
     }
 }
 
+fn handleJSI(self: *Self, identifier: []const u8) !void {
+    try self.writeByte(uxn.JSI);
+
+    const label = try parseLabel(self, identifier);
+    const ultype: UnresolvedLabelType = .immediate;
+    try self.unresolved_labels.append(self.arena, 
+        .{ 
+            .gen_ptr = @truncate(self.gen_ptr),
+            .label = label,
+            .ultype = ultype,
+        }
+    );
+    self.gen_ptr += 2;
+}
+
+
 pub fn assemble(self: *Self) !void {
     var lexer: Lexer = .{ .source = self.source };
     const pre_macro_tokens = try lexer.lex(self.arena);
@@ -466,9 +482,7 @@ pub fn assemble(self: *Self) !void {
                     return AssemblerError.DuplicateLabel;
                 try self.labels.put(label, @intCast(self.gen_ptr));
             },
-            .left_curly_brace => {
-                return AssemblerError.UnknownInput;
-            },
+            .left_curly_brace => try self.handleJSI("{"),
             .macro_label => {
                 return AssemblerError.UnresolvedMacro;
             },
@@ -508,18 +522,7 @@ pub fn assemble(self: *Self) !void {
                         else => unreachable
                     }
                 } else {
-                    try self.writeByte(uxn.JSI);
-
-                    const label = try parseLabel(self, identifier);
-                    const ultype: UnresolvedLabelType = .immediate;
-                    try self.unresolved_labels.append(self.arena, 
-                        .{ 
-                            .gen_ptr = @truncate(self.gen_ptr),
-                            .label = label,
-                            .ultype = ultype,
-                        }
-                    );
-                    self.gen_ptr += 2;
+                    try self.handleJSI(identifier);
                 }
             },
         }
