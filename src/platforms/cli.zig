@@ -3,6 +3,7 @@ const uxn = @import("uxn");
 const Console = @import("devices").Console;
 const System = @import("devices").System;
 const File = @import("devices").File;
+const Datetime = @import("devices").Datetime;
 const print = @import("std").debug.print;
 
 const UXNCLIError = error{
@@ -36,6 +37,8 @@ pub fn main(init: std.process.Init) !void {
         init.gpa.free(uxn_args);
     }
 
+    var datetime: Datetime = .{ .io = io };
+
     const stdin_buffer = try init.gpa.alloc(u8, 0x100);
     var stdin = std.Io.File.stdin().reader(io, stdin_buffer);
     defer init.gpa.free(stdin_buffer);
@@ -60,6 +63,7 @@ pub fn main(init: std.process.Init) !void {
         .system = &system,
         .file_a = &file_a,
         .file_b = &file_b,
+        .datetime = &datetime,
     };
 
     const dev = uxn.Device.init(&cli_dev);
@@ -98,6 +102,7 @@ const CLI = struct {
     system: *System,
     file_a: *File,
     file_b: *File,
+    datetime: *Datetime,
 
     const Self = @This();
 
@@ -107,6 +112,7 @@ const CLI = struct {
             0x10...0x1f => return self.console.dei(vm, dev, s),
             0xa0...0xaf => return self.file_a.dei(vm, dev, s),
             0xb0...0xbf => return self.file_b.dei(vm, dev, s),
+            0xc0...0xcf => return self.datetime.dei(vm, dev, s),
             else => return vm.zp_fetch(dev, s),
         }
     }
@@ -117,6 +123,7 @@ const CLI = struct {
             0x10...0x1f => return self.console.deo(vm, dev, value, s),
             0xa0...0xaf => return self.file_a.deo(vm, dev, value, s),
             0xb0...0xbf => return self.file_b.deo(vm, dev, value, s),
+            0xc0...0xcf => return self.datetime.deo(vm, dev, value, s),
             else => vm.zp_store(value, dev, s),
         }
     }
