@@ -3,7 +3,7 @@ const uxn = @import("uxn");
 const Console = @import("devices").Console;
 const System = @import("devices").System;
 const File = @import("devices").File;
-const Datetime = @import("devices").Datetime;
+const CDatetime = @import("devices").CDatetime;
 const print = @import("std").debug.print;
 
 const UXNCLIError = error{
@@ -37,7 +37,7 @@ pub fn main(init: std.process.Init) !void {
         init.gpa.free(uxn_args);
     }
 
-    var datetime: Datetime = .{ .io = io };
+    var datetime: CDatetime = .{};
 
     const stdin_buffer = try init.gpa.alloc(u8, 0x100);
     var stdin = std.Io.File.stdin().reader(io, stdin_buffer);
@@ -102,7 +102,7 @@ const CLI = struct {
     system: *System,
     file_a: *File,
     file_b: *File,
-    datetime: *Datetime,
+    datetime: *CDatetime,
 
     const Self = @This();
 

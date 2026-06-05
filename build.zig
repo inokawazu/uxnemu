@@ -7,13 +7,22 @@ pub fn build(b: *std.Build) void {
     const uxn = b.addModule("uxn", .{
         .root_source_file = b.path("src/uxn.zig"),
         .target = target,
+        .optimize = optimize,
     });
+
+    const ctime = b.addTranslateC(.{ 
+        .root_source_file = b.path("src/c/test_time.h"),
+        .target = target,
+        .optimize = optimize,
+    },);
+    const time = ctime.createModule();
 
     const devices = b.addModule("devices", .{
         .root_source_file = b.path("src/devices/devices.zig"),
         .target = target,
         .imports = &.{
             .{ .name = "uxn", .module = uxn },
+            .{ .name = "ctime", .module = time },
         },
     });
 
@@ -31,7 +40,6 @@ pub fn build(b: *std.Build) void {
     });
 
     addExeToBuild(b, cli_exe, "run_cli", "Run the cli emulator");
-
 
     const asm_exe = b.addExecutable(.{
         .name = "uxnasm",
