@@ -188,8 +188,6 @@ pub const VM = struct {
     }
 
     pub fn pop(self: *Self, r: u1, s: u1) u16 {
-        // if (self.ptr[r] <= s)
-        //     return 0;
         var out: u16 = self.stk[r][self.ptr[r] -% 1];
         if (s == 1) {
             out |= @as(u16, self.stk[r][self.ptr[r] -% 2]) << 8;
@@ -229,7 +227,6 @@ pub const VM = struct {
         }
     }
 
-
     pub fn zp_fetch(self: *Self, addr: u8, s: u1) u16 {
         if (s == 1) {
             return mword(self.ram[addr], self.ram[addr +% 1]);
@@ -245,6 +242,24 @@ pub const VM = struct {
         } else {
             self.ram[addr] = @truncate(x);
         }
+    }
+
+    fn get_args(self: *Self, comptime nargs: u4, ss: [nargs]u1, r: u1, k: u1) [nargs]u16 {
+        const ptr_start= self.ptr[r];
+        
+        var args: [nargs]u16 = undefined;
+        for (0..ss.len) |i|
+            args[i] = self.pop(r, ss[i]);
+
+        if (k == 1)
+            self.ptr[r] = ptr_start;
+
+        return args;
+    }
+
+
+    fn get_arg(self: *Self, s: u1, r: u1, k: u1) u16 {
+        return self.get_args(1, .{s}, r, k)[0];
     }
 
     pub fn eval(vm: *Self, vector_address: u16, deio: Device) void {
@@ -277,7 +292,6 @@ pub const VM = struct {
                         },
                         BRK => return,
                         JCI => {
-                            // TODO: test JCI
                             const b = vm.pop(r, 0);
                             if (b != 0)
                                 pc +%= vm.fetch(pc, 1);
@@ -300,302 +314,175 @@ pub const VM = struct {
                     }
                 },
                 .INC => {
-                    const y = vm.pop(r, s);
-                    if (k == 1)
-                        vm.push(y, r, s);
+                    const y = vm.get_args(1, .{s}, r, k)[0];
                     var res = y +% 1;
                     if (s == 0)
                         res &= 0x00FF;
                     vm.push(res, r, s);
                 },
                 .POP => {
-                    if (k == 0)
-                        _ = vm.pop(r, s);
+                    _ = vm.get_arg(s, r, k);
                 },
                 .NIP => {
-                    const y = vm.pop(r, s);
-                    const n = vm.pop(r, s);
-                    if (k == 1) {
-                        vm.push(n, r, s);
-                        vm.push(y, r, s);
-                    }
+                    const y, _ = vm.get_args(2, .{s, s}, r, k);
                     vm.push(y, r, s);
                 },
                 .SWP => {
-                    const y = vm.pop(r, s);
-                    const x = vm.pop(r, s);
-                    if (k == 1) {
-                        vm.push(x, r, s);
-                        vm.push(y, r, s);
-                    }
+                    const y, const x = 
+                        vm.get_args(2, .{s, s}, r, k);
                     vm.push(y, r, s);
                     vm.push(x, r, s);
                 },
                 .ROT => {
-                    // x y z -> y z x
-                    const z = vm.pop(r, s);
-                    const y = vm.pop(r, s);
-                    const x = vm.pop(r, s);
-                    if (k == 1) {
-                        vm.push(x, r, s);
-                        vm.push(y, r, s);
-                        vm.push(z, r, s);
-                    }
-                    vm.push(y, r, s); // y
-                    vm.push(z, r, s); // y z
-                    vm.push(x, r, s); // y z x
+                    const z, const y, const x = 
+                        vm.get_args(3, .{s, s, s}, r, k);
+                    vm.push(y, r, s);
+                    vm.push(z, r, s);
+                    vm.push(x, r, s);
                 },
                 .DUP => {
-                    const x = vm.pop(r, s);
-                    if (k == 1) 
-                        vm.push(x, r, s);
+                    const x = vm.get_arg(s, r, k);
                     vm.push(x, r, s);
                     vm.push(x, r, s);
                 },
                 .OVR => {
-                    // TODO: test OVR
-                    const y = vm.pop(r, s);
-                    const x = vm.pop(r, s);
-                    if (k == 1) {
-                        vm.push(x, r, s);
-                        vm.push(y, r, s);
-                    }
+                    const y, const x = 
+                        vm.get_args(2, .{s, s}, r, k);
                     vm.push(x, r, s);
                     vm.push(y, r, s);
                     vm.push(x, r, s);
                 },
                 .EQU => {
-                    // TODO: test EQU
-                    const y = vm.pop(r, s);
-                    const x = vm.pop(r, s);
-                    if (k == 1) {
-                        vm.push(x, r, s);
-                        vm.push(y, r, s);
-                    }
+                    const y, const x = 
+                        vm.get_args(2, .{s, s}, r, k);
                     vm.push(if (x == y) 1 else 0, r, 0);
                 },
                 .NEQ => {
-                    // TODO: test NEQ
-                    const y = vm.pop(r, s);
-                    const x = vm.pop(r, s);
-                    if (k == 1) {
-                        vm.push(x, r, s);
-                        vm.push(y, r, s);
-                    }
+                    const y, const x = 
+                        vm.get_args(2, .{s, s}, r, k);
                     vm.push(if (x != y) 1 else 0, r, 0);
                 },
                 .GTH => {
-                    // TODO: test GTH
-                    // x y - (x > y)
-                    const y = vm.pop(r, s);
-                    const x = vm.pop(r, s);
-                    if (k == 1) {
-                        vm.push(x, r, s);
-                        vm.push(y, r, s);
-                    }
+                    const y, const x = 
+                        vm.get_args(2, .{s, s}, r, k);
                     vm.push(if (x > y) 1 else 0, r, 0);
                 },
                 .LTH => {
-                    // TODO: test LTH
-                    const y = vm.pop(r, s);
-                    const x = vm.pop(r, s);
-                    if (k == 1) {
-                        vm.push(x, r, s);
-                        vm.push(y, r, s);
-                    }
+                    const y, const x = 
+                        vm.get_args(2, .{s, s}, r, k);
                     vm.push(if (x < y) 1 else 0, r, 0);
                 },
                 .JMP => {
-                    //TODO: test JMP
-                    const x = vm.pop(r, s);
-                    if (k == 1) 
-                        vm.push(x, r, s);
+                    const x = vm.get_arg(s, r, k);
                     pc = jump(pc, x, s);
                 },
                 .JCN => {
-                    //TODO: test JCN
-                    const x = vm.pop(r, s);
-                    const b = vm.pop(r, 0);
-                    if (k == 1) {
-                        vm.push(b, r, 0);
-                        vm.push(x, r, s);
-                    }
+                    const x, const b = 
+                        vm.get_args(2, .{s, 0}, r, k);
                     if (b != 0)
                         pc = jump(pc, x, s);
                 },
                 .JSR => {
-                    //TODO: test JSR
-                    const x = vm.pop(r, s);
-                    if (k == 1)
-                        vm.push(x, r, s);
+                    const x = vm.get_arg(s, r, k);
                     vm.push(pc, r ^ 1, 1);
                     pc = jump(pc, x, s);
                 },
                 .STH => {
-                    //TODO: test STH
-                    const x = vm.pop(r, s);
-                    if (k == 1)
-                        vm.push(x, r, s);
+                    const x = vm.get_arg(s, r, k);
                     vm.push(x, r ^ 1, s);
                 },
                 .LDZ => {
-                    //TODO: test LDZ
-                    const zp = vm.pop(r, 0);
-                    if (k == 1)
-                        vm.push(zp, r, 0);
+                    const zp = vm.get_arg(0, r, k);
                     const x = vm.zp_fetch(@truncate(zp), s);
                     vm.push(x, r, s);
                 },
                 .STZ => {
-                    //TODO: test STZ
-                    const zp = vm.pop(r, 0);
-                    const x = vm.pop(r, s);
-                    if (k == 1) {
-                        vm.push(x, r, s);
-                        vm.push(zp, r, 0);
-                    }
+                    const zp, const x = 
+                        vm.get_args(2, .{0, s}, r, k);
                     vm.zp_store(x, @truncate(zp), s);
                 },
                 .LDR => {
-                    //TODO: test LDR
-                    const rel = vm.pop(r, 0);
-                    if (k == 1)
-                        vm.push(rel, r, 0);
+                    const rel = vm.get_arg(0, r, k);
                     const addr = rel_offset(pc, @truncate(rel));
                     const x = vm.fetch(addr, s);
                     vm.push(x, r, s);
                 },
                 .STR => {
-                    //TODO: test STR
-                    const rel = vm.pop(r, 0);
-                    const x = vm.pop(r, s);
-                    if (k == 1) {
-                        vm.push(x, r, s);
-                        vm.push(rel, r, 0);
-                    }
+                    const rel, const x = 
+                        vm.get_args(2, .{0, s}, r, k);
                     const addr = rel_offset(pc, @truncate(rel));
                     vm.store(x, addr, s);
                 },
                 .LDA => {
-                    //TODO: test LDA
-                    const addr = vm.pop(r, 1);
-                    if (k == 1)
-                        vm.push(addr, r, 1);
+                    const addr = vm.get_arg(1, r, k);
                     const x = vm.fetch(addr, s);
                     vm.push(x, r, s);
                 },
                 .STA => {
-                    //TODO: test STA
-                    const addr = vm.pop(r, 1);
-                    const x = vm.pop(r, s);
-                    if (k == 1) {
-                        vm.push(x, r, s);
-                        vm.push(addr, r, 1);
-                    }
+                    const addr, const x = 
+                        vm.get_args(2, .{1, s}, r, k);
                     vm.store(x, addr, s);
                 },
                 .DEI => {
-                    //TODO: test DEI and implement
-                    const dev = vm.pop(r, 0);
-                    if (k == 1)
-                        vm.push(dev, r, 0);
+                    const dev = vm.get_arg(0, r, k);
                     const x = deio.dei(vm, @truncate(dev), s);
                     vm.push(x, r, s);
                 },
                 .DEO => {
-                    //TODO: test DEO and implement
-                    const dev = vm.pop(r, 0);
-                    const x = vm.pop(r, s);
-                    if (k == 1) {
-                        vm.push(x, r, s);
-                        vm.push(dev, r, 0);
-                    }
+                    const dev, const x = 
+                        vm.get_args(2, .{0, s}, r, k);
                     deio.deo(vm, @truncate(dev), x, s);
                 },
                 .ADD => {
-                    const y = vm.pop(r, s);
-                    const x = vm.pop(r, s);
-                    if (k == 1) {
-                        vm.push(x, r, s);
-                        vm.push(y, r, s);
-                    }
+                    const y, const x = 
+                        vm.get_args(2, .{s, s}, r, k);
                     var res = x +% y;
                     if (s == 0)
                         res &= 0x00FF;
                     vm.push(res, r, s);
                 },
                 .SUB => {
-                    // x y - (x-y)
-                    const y = vm.pop(r, s);
-                    const x = vm.pop(r, s);
-                    if (k == 1) {
-                        vm.push(x, r, s);
-                        vm.push(y, r, s);
-                    }
+                    const y, const x = 
+                        vm.get_args(2, .{s, s}, r, k);
                     var res = x -% y;
                     if (s == 0)
                         res &= 0x00FF;
                     vm.push(res, r, s);
                 },
                 .MUL => {
-                    const y = vm.pop(r, s);
-                    const x = vm.pop(r, s);
-                    if (k == 1) {
-                        vm.push(x, r, s);
-                        vm.push(y, r, s);
-                    }
+                    const y, const x = 
+                        vm.get_args(2, .{s, s}, r, k);
                     var res = x *% y;
                     if (s == 0)
                         res &= 0x00FF;
                     vm.push(res, r, s);
                 },
                 .DIV => {
-                    const y = vm.pop(r, s);
-                    const x = vm.pop(r, s);
-                    if (k == 1) {
-                        vm.push(x, r, s);
-                        vm.push(y, r, s);
-                    }
+                    const y, const x = 
+                        vm.get_args(2, .{s, s}, r, k);
                     const res = if (y == 0) 0 else x / y;
                     vm.push(res, r, s);
                 },
                 .AND => {
-                    const y = vm.pop(r, s);
-                    const x = vm.pop(r, s);
-                    if (k == 1) {
-                        vm.push(x, r, s);
-                        vm.push(y, r, s);
-                    }
+                    const y, const x = 
+                        vm.get_args(2, .{s, s}, r, k);
                     vm.push(x & y, r, s);
                 },
                 .ORA => {
-                    const y = vm.pop(r, s);
-                    const x = vm.pop(r, s);
-                    if (k == 1) {
-                        vm.push(x, r, s);
-                        vm.push(y, r, s);
-                    }
+                    const y, const x = 
+                        vm.get_args(2, .{s, s}, r, k);
                     vm.push(x | y, r, s);
                 },
                 .EOR => {
-                    const y = vm.pop(r, s);
-                    const x = vm.pop(r, s);
-                    if (k == 1) {
-                        vm.push(x, r, s);
-                        vm.push(y, r, s);
-                    }
+                    const y, const x = 
+                        vm.get_args(2, .{s, s}, r, k);
                     vm.push(x ^ y, r, s);
                 },
                 .SFT => {
-                    // TODO: test SFT
-                    const lr: u8 = @truncate(vm.pop(r, 0));
+                    const lr, const x = 
+                        vm.get_args(2, .{0, s}, r, k);
                     const ln: u4 = @truncate(lr >> 4);
                     const rn: u4 = @truncate(lr);
-                    const x = vm.pop(r, s);
-                    if (k == 1) {
-                        vm.push(x, r, s);
-                        vm.push(lr, r, 0);
-                    }
                     vm.push((x >> rn) << ln, r, s);
                 },
             }
