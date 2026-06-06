@@ -62,7 +62,7 @@ const UnresolvedLabelType = enum {
 pub fn init(arena: std.mem.Allocator, source: []u8) !Self {
     var labels =
         std.StringHashMap(u16).init(arena);
-    try labels.put(DEFAULT_CONTEXT, 0x10);
+    try labels.put(DEFAULT_CONTEXT, 0x100);
 
     const unresolved_labels = 
         try std.ArrayList(UnresolvedLabel).initCapacity(arena, 0);
