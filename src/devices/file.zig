@@ -75,7 +75,7 @@ pub fn deo(self: *Self, vm: *uxn.VM, dev: u8, value: u16, s: u1) void {
                     var iter = dir.iterate();
                     var rptr: usize = @intCast(vm.fetch(self.devAddr(.read), 1));
                     while (iter.next(self.io) catch return) |x|
-                        rptr += self.writeStatInfo(vm, dir, x.name, @truncate(rptr)) catch return;
+                        rptr += self.writeDirEntry(vm, dir, x.name, @truncate(rptr)) catch return;
                     },
                     else => {}
             }
@@ -83,7 +83,7 @@ pub fn deo(self: *Self, vm: *uxn.VM, dev: u8, value: u16, s: u1) void {
         .stat => {
             const cwd = std.Io.Dir.cwd();
             const stat_addr = vm.zp_fetch(self.devAddr(.stat), 1);
-            const nwrite = self.writeStatInfo(
+            const nwrite = self.writeStat(
                 vm, cwd, 
                 self.getFileName(vm), 
                 stat_addr) catch return;
@@ -142,7 +142,7 @@ pub fn deo(self: *Self, vm: *uxn.VM, dev: u8, value: u16, s: u1) void {
     }
 }
 
-fn writeStatInfo(self: *Self, vm: *uxn.VM, dir: std.Io.Dir, sub_path: []const u8, rptr: usize) !usize {
+fn getInfoStr(self: *Self, dir: std.Io.Dir, sub_path: []const u8) ![4]u8 {
     var info_str: [4]u8 = undefined;
     const maybe_stat: ?std.Io.Dir.Stat = dir.statFile(self.io, sub_path, .{}) catch null;
     if (maybe_stat) |stat| {
@@ -160,18 +160,43 @@ fn writeStatInfo(self: *Self, vm: *uxn.VM, dir: std.Io.Dir, sub_path: []const u8
     } else {
         @memmove(&info_str, "!!!!");
     }
+    return info_str;
+}
 
-    var buffer: [0x10]u8 = undefined;
-    const to_write = try std.fmt.bufPrint(
-        &buffer, "{s} {s}\n", .{info_str, sub_path});
+fn writeDirEntry(self: *Self, vm: *uxn.VM, dir: std.Io.Dir, sub_path: []const u8, rptr: usize) !usize {
+    const info_str = try self.getInfoStr(dir, sub_path);
+
     var rptr_offset: usize = 0;
+    const length = self.getLength(vm);
     while (
-        rptr_offset < self.getLength(vm) and 
+        rptr_offset < length and 
         rptr + rptr_offset < 0x10000 and
-        rptr_offset < to_write.len) : (rptr_offset += 1)
-        vm.ram[rptr + rptr_offset] = to_write[rptr_offset];
+        rptr_offset < info_str.len + 1 + sub_path.len + 1) : (rptr_offset += 1) {
+        if (rptr_offset < info_str.len) {
+            vm.ram[rptr + rptr_offset] = info_str[rptr_offset];
+        } else if (rptr_offset < info_str.len + 1) {
+            vm.ram[rptr + rptr_offset] = ' ';
+        } else if (rptr_offset < info_str.len + 1 + sub_path.len) {
+            vm.ram[rptr + rptr_offset] = sub_path[rptr_offset - (info_str.len + 1)];
+        } else {
+            vm.ram[rptr + rptr_offset] = '\n';
+        }
+    }
 
-    // std.debug.print("getting the stat ({d} bytes) of {s} -> {s} to 0x{x:2>4}..0x{x:2>4}\n", .{rptr_offest, sub_path, to_write, rptr, rptr+rptr_offest});
+    return rptr_offset;
+}
+
+
+fn writeStat(self: *Self, vm: *uxn.VM, dir: std.Io.Dir, sub_path: []const u8, rptr: usize) !usize {
+    const info_str = try self.getInfoStr(dir, sub_path);
+    var rptr_offset: usize = 0;
+    const length = self.getLength(vm);
+    while (
+        rptr_offset < length and 
+        rptr + rptr_offset < 0x10000 and
+        rptr_offset < info_str.len) : (rptr_offset += 1) {
+        vm.ram[rptr + rptr_offset] = info_str[rptr_offset];
+    }
     return rptr_offset;
 }
 
